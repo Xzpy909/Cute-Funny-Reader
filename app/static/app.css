@@ -47,14 +47,15 @@ body.fx-topglass-off .top{-webkit-backdrop-filter:none;backdrop-filter:none;back
 .top-l{display:flex;align-items:center;gap:10px}
 .top-r{display:flex;align-items:center;justify-content:flex-end;gap:10px}
 /* the side groups keep their own width, so the search shrinks instead of sliding under the buttons */
-@media (max-width:1180px){.addbtn b{display:none}.addbtn{padding:0 11px}.scope{max-width:120px}}
+@media (max-width:1180px){.addbtn b{display:none}.addbtn{padding:0 11px}}
 .top .search{max-width:none;width:100%;height:52px;padding:0 10px 0 18px;border-radius:16px;background:rgba(28,26,37,.82);border-color:#36333f;box-shadow:0 10px 30px rgba(0,0,0,.35)}
 .top .search input{font-size:15px;min-width:0}
-.scope{display:flex;align-items:center;gap:6px;height:32px;max-width:170px;padding:0 9px 0 10px;border-radius:9px;border:1px solid #36333f;background:#24222c;color:#d9d5e2;font-weight:600;font-size:12.5px;flex:none;transition:background .2s,border-color .2s}
-.scope:hover{background:#2c2a35;color:var(--text)}
-.scope span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.scope.lib::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
-.scope svg{width:14px;height:14px;flex:none}
+/* search scope: an icon — the colour wheel = everything, a library's colour + initial = that library */
+.scope{flex:none;width:32px;height:32px;border-radius:50%;padding:0;display:grid;place-items:center;border:2px solid #36333f;
+  background:conic-gradient(var(--pop),var(--lemon),var(--mint),var(--sky),var(--pop));transition:transform .15s,border-color .2s}
+.scope:hover{transform:scale(1.08);border-color:#5a5666}
+.scope.lib{background:var(--c)}
+.scope #scopeName{font-weight:800;font-size:13px;color:#0c0b10;line-height:1}
 .addbtn{display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);font-weight:700;font-size:13.5px;transition:background .2s}
 .addbtn:hover{background:rgba(255,255,255,.1)}
 .addbtn svg{width:17px;height:17px}
@@ -568,7 +569,7 @@ body:not(.fx-keep-pulse) .main.scrolling .ubub i::after{animation:none}
   .shero{grid-template-columns:1fr}.shero .hero-cover{width:140px}.brow{grid-template-columns:40px 1fr auto}.brow .bp,.brow .bar{display:none}
   .app{grid-template-columns:1fr}.side{display:none}.main{padding:0 18px 60px}
   .top{margin:0 -18px;padding:10px 18px;grid-template-columns:auto minmax(0,1fr) auto;gap:10px}
-  .top .search{height:46px;padding:0 8px 0 14px}.top .search kbd{display:none}.addbtn b{display:none}.addbtn{padding:0 11px}.scope{max-width:110px}
+  .top .search{height:46px;padding:0 8px 0 14px}.top .search kbd{display:none}.addbtn b{display:none}.addbtn{padding:0 11px}
   .hero{grid-template-columns:1fr;padding:22px}.hero-cover{width:150px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:22px 14px}
   .rt,.sep,#btnZoom{display:none}.seg button{padding:6px 9px}
@@ -918,7 +919,6 @@ body.booting .app{visibility:hidden}
 .cmpknob:focus-visible i{outline:3px solid var(--pop)}
 .cmphint{margin:0;padding:8px 16px;font-size:12px;color:var(--mute);text-align:center;border-top:1px solid var(--line)}
 .rawpill.avifpill{color:var(--mint)}
-.optmark{font-size:11px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
 /* the Jobs panel looks like the uploads panel */
 #jobs{position:fixed;right:18px;bottom:18px;z-index:74;width:360px;max-height:50vh;border-radius:18px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.8)}
 #jobs.on{display:flex;animation:popIn .25s var(--ease)}

@@ -29,7 +29,7 @@ const V = lid => VOCAB[lid && isCosplay(lid) ? 'cosplay' : 'comics'];
 const Vhome = () => S.lib ? V(S.lib) : (S.libraries.length && S.libraries.every(l => isCosplay(l.id)) ? VOCAB.cosplay : VOCAB.comics);
 
 const ICONS = {
-  chevL: '<path d="M15 18l-6-6 6-6"/>', chevR: '<path d="M9 18l6-6-6-6"/>', chevD: '<path d="M6 9l6 6 6-6"/>', spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', chevR: '<path d="M9 18l6-6-6-6"/>',
+  chevL: '<path d="M15 18l-6-6 6-6"/>', chevR: '<path d="M9 18l6-6-6-6"/>', chevD: '<path d="M6 9l6 6 6-6"/>', plus: '<path d="M12 5v14M5 12h14"/>', spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', chevR: '<path d="M9 18l6-6-6-6"/>',
   home: '<path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>',
@@ -386,9 +386,7 @@ function softBlur(d, w, h, radius) {
 }
 const fmtPills = x => (x.raw ? '<span class="rawpill" title="Lossless images (PNG / BMP / TIFF)">RAW</span>' : '')
   + (x.jxl ? '<span class="rawpill" title="JPEG XL — converted to PNG when you open it">JPEG XL</span>' : '')
-  + (x.heic ? '<span class="rawpill" title="HEIC / HEIF — converted to PNG when you open it">HEIC</span>' : '')
-  + (x.avif && !x.optimized ? '<span class="rawpill avifpill" title="AVIF — came this way">AVIF</span>' : '')
-  + (x.optimized ? '<span class="optmark" title="Optimized to AVIF with ✨ Optimize">✨</span>' : '');
+  + (x.heic ? '<span class="rawpill" title="HEIC / HEIF — converted to PNG when you open it">HEIC</span>' : '');
 const coverBook = s => s.books.find(b => b.seriesCover) || s.books[0];
 const seriesCover = (s, w) => s.books.length ? coverImg(coverBook(s), w) : `<img src="${placeholderCover({ id: s.id, series: s.name })}" alt="" draggable="false">`;
 const saveSeriesPref = (sid, patch) => { seriesPrefs[sid] = { ...seriesPrefs[sid], ...patch }; local.set('cf-series', seriesPrefs); };
@@ -450,8 +448,6 @@ function buildSeries() {
     s.raw = s.books.every(b => b.raw);                 // every book lossless (PNG/BMP/TIFF) → RAW pill
     s.jxl = s.books.every(b => b.jxl);                 // every book JPEG XL → JPEG XL pill
     s.heic = s.books.every(b => b.heic);               // every book HEIC / HEIF → HEIC pill
-    s.optimized = s.books.some(b => b.optimized);                 // converted by ✨ Optimize → a small ✨
-    s.avif = s.books.length > 0 && s.books.every(b => b.avif) && !s.optimized;   // AVIF from the start → AVIF pill
     const uniq = arr => [...new Map(arr.map(t => [t.toLowerCase(), t])).values()];
     s.genres = uniq(s.books.flatMap(b => b.genres || []));
     // series tags = what every *tagged* chapter has (untagged chapters = "no info", they don't veto anything);
@@ -692,11 +688,9 @@ function renderHome() {
   const pickTarget = col ? col.library : S.lib || (S.libraries.length === 1 ? S.libraries[0].id : '');
   const selOn = S.sel && S.selMode === 'series';
   $('#viewHome').classList.toggle('selecting', !!selOn);
-  $('#libActions').innerHTML = (pickTarget ? `<button class="btn-sm pri" data-pick="${pickTarget}" ${col ? `data-pickcol="${esc(col.folder)}"` : ''}>+ Add files</button>` : '')
-    + (S.series.length ? `<button class="btn-sm ${selOn ? 'pri' : ''}" data-select>${selOn ? 'Done selecting' : '☑ Select files'}</button>` : '')
-    + (col ? `<button class="btn-sm" data-more="collection:${col.id}">⋯ Collection</button>`
-      : pickTarget ? `<button class="btn-sm" data-newcol="${pickTarget}">+ New ${V(pickTarget).g}</button>` : '')
-    + (S.lib && !col ? `<button class="btn-sm" data-editlib="${S.lib}">${ico('sliders', 15)} Edit library</button>` : '');
+  // adding files: the top bar's Add · new collection & library settings: right-click the library
+  $('#libActions').innerHTML = (S.series.length ? `<button class="btn-sm ${selOn ? 'pri' : ''}" data-select>${selOn ? 'Done selecting' : '☑ Select files'}</button>` : '')
+    + (col ? `<button class="btn-sm" data-more="collection:${col.id}">⋯ Collection</button>` : '');
 
   const q = normQ(S.q);
   const flat = !!q || S.filter !== 'all';          // searching/filtering looks inside collections too
@@ -761,7 +755,7 @@ function renderHome() {
     const unread = s.books.length ? newCount(s) : 0;
     const bubble = unread && !one ? `<span class="ubub" title="${plural(unread, 'chapter')} not started yet"><i></i><b>${unread > 99 ? '99+' : unread}</b> new</span>` : '';
     return `<button class="card ${seriesTrashed(s) ? 'trashed' : unread ? 'unread' : ''} ${selOn && S.sel.has(s.id) ? 'sel' : ''}" data-series="${s.id}" ${one ? `data-single="${b0.id}"` : ''} style="--d:${Math.min(k + cols.length, 20) * 30}ms">
-      <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || s.avif || s.optimized || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
+      <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
       <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
       <div class="ct" ${one && b0.title && normQ(b0.title) !== normQ(s.name) ? `title="${esc(b0.title)}"` : ''}>${esc(s.name)}</div>
       <div class="cm">${one ? progressText(b0) : countLabel(s)}${s.author ? ` · <span class="au">${esc(s.author)}</span>` : ''}${!one && i.unread && i.unread < s.books.length ? ` · ${i.unread} unread` : ''}${flat && s.collectionId ? ` · 🗂️ ${esc(S.colById[s.collectionId]?.name || '')}` : ''}</div>${cardTags(s)}
@@ -924,7 +918,7 @@ function hitCard(b, k) {
   const s = S.seriesById[b.seriesId], cos = isCosplay(b.library);
   const glow = bookGlow(b, cos);
   return `<button class="card ch hit ${isDone(b) ? 'done' : ''} ${b.trashed ? 'trashed' : glow}" data-open="${b.id}" style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}<span class="badge fmt">${cos ? V(b.library).b.toUpperCase() : b.kind === 'volume' ? 'VOLUME' : 'CHAPTER'}</span>${b.raw || b.jxl || b.heic || b.avif || b.optimized ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
+    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}<span class="badge fmt">${cos ? V(b.library).b.toUpperCase() : b.kind === 'volume' ? 'VOLUME' : 'CHAPTER'}</span>${b.raw || b.jxl || b.heic ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(bookFrac(b) * 100)}%"></i></div>
     <div class="ct">${escWrap(s && s.books.length > 1 ? b.label + (b.title ? ' · ' + b.title : '') : b.title || b.label)}</div>
     <div class="cm">in ${esc(s?.name || b.series)}</div>
@@ -1101,10 +1095,12 @@ const onSeriesPage = () => location.hash.startsWith('#/series/') && !document.bo
    Scope = where the search looks: everything, or one library (the same as opening that library).
    Add = upload into wherever you are: this series, this collection, this library — on Home, pick a library. */
 function updateTopButton() {
-  const l = S.lib && S.libById[S.lib];
-  $('#scopeName').textContent = l ? l.name : 'Everything';
-  $('#btnScope').style.setProperty('--c', l ? l.color : 'transparent');
-  $('#btnScope').classList.toggle('lib', !!l);
+  const l = S.lib && S.libById[S.lib], b = $('#btnScope');
+  const label = `Search in: ${l ? l.name : 'everything'}`;
+  b.title = label; b.setAttribute('aria-label', label);
+  b.style.setProperty('--c', l ? l.color : 'transparent');
+  b.classList.toggle('lib', !!l);
+  $('#scopeName').textContent = l ? (l.name.trim()[0] || '•').toUpperCase() : '';   // the library's initial on its colour
 }
 function addTarget() {
   const s = onSeriesPage() && S.seriesById[S.curSeries];
@@ -1660,8 +1656,7 @@ document.addEventListener('click', e => {
   const cbk = t.closest('[data-colback]');
   if (cbk) { location.hash = `#/collection/${cbk.dataset.colback}`; return; }
   const nc = t.closest('[data-newcol]');
-  if (nc) return openPrompt(nc, { title: `New ${V(nc.dataset.newcol).g}`, hint: `A folder that groups ${pl(V(nc.dataset.newcol).s)} inside ${libName(nc.dataset.newcol)}.`, placeholder: 'e.g. Isekai, Favourites, 2026 releases', button: 'Create',
-    run: async name => { const r = await jsonFetch('POST', `/api/libraries/${nc.dataset.newcol}/collections`, { name }); history.pushState(null, '', `#/collection/${r.id}`); appToast(`Created ${name}`); await load(); } });
+  if (nc) return newCollection(nc, nc.dataset.newcol);
   const ss = t.closest('[data-sersettings]');
   if (ss) return openSeriesModal(S.seriesById[ss.dataset.sersettings]);
   const ns = t.closest('[data-newseries]');
@@ -2382,6 +2377,39 @@ function fileTree(items) {
   }
   return root;
 }
+// metadata.json / ComicInfo.xml inside a dropped folder of images go into the packed file, and its title names it:
+//   metadata.json "title"  → the file and its series / set     ComicInfo.xml: Series → the series, Title → the file
+const META_RE = /^(metadata\.json|comicinfo\.xml)$/i;
+const META = new Map();                                // File → { title, series } (filled by readMeta before planning)
+const metaIn = n => n.files.filter(f => META_RE.test(f.name));
+function folderMeta(n) {
+  const out = {};
+  for (const f of metaIn(n)) {                         // metadata.json wins over ComicInfo.xml
+    const m = META.get(f) || {};
+    if (/\.json$/i.test(f.name)) { if (m.title) out.title = m.title; }
+    else { out.title ||= m.title; out.series = m.series; }
+  }
+  return out;
+}
+const titleOf = n => tidyName(folderMeta(n).title || '') || n.name;                       // the packed file
+const seriesOf = n => { const m = folderMeta(n); return tidyName(m.series || m.title || '') || n.name; };   // its folder
+async function readMeta(items) {
+  META.clear();
+  await Promise.all(items.filter(it => META_RE.test(it.file.name)).map(async it => {
+    try {
+      const text = await it.file.text();
+      if (/\.json$/i.test(it.file.name)) {
+        const d = JSON.parse(text.replace(/^\uFEFF/, ''));
+        META.set(it.file, { title: typeof d?.title === 'string' ? d.title.trim() : '' });
+      } else {
+        const x = new DOMParser().parseFromString(text, 'application/xml');
+        const tag = t => x.getElementsByTagName(t)[0]?.textContent?.trim() || '';
+        const series = tag('Series'), num = tag('Number');
+        META.set(it.file, { title: tag('Title') || (series && num ? `${series} ${num}` : ''), series });
+      }
+    } catch { /* unreadable: the folder name stays */ }
+  }));
+}
 // a folder holding images packs ALL its media (videos between photos stay in order); videos alone stay separate files
 const hasImages = n => n.files.some(f => IMG_RE.test(f.name));
 const archivesIn = n => n.files.filter(f => BOOK_RE.test(f.name) || (!hasImages(n) && VIDEO_RE.test(f.name))).sort((a, b) => natCmp(a.name, b.name));
@@ -2403,12 +2431,13 @@ function stemGroups(dirs) {
 function planUploads(items, ctx) {
   const jobs = [], root = fileTree(items);
   const fileJob = (f, place) => jobs.push({ f, name: f.name, size: f.size, ...place });
-  const packJob = (name, images, place) => jobs.push({ name: safeName(name) + '.cbz', images, size: images.reduce((n, f) => n + f.size, 0), packed: true, ...place });
+  const packJob = (name, images, place, extras = []) => jobs.push({ name: safeName(name) + '.cbz', images, extras, size: images.reduce((n, f) => n + f.size, 0), packed: true, ...place });
   const top = { series: ctx.seriesId || undefined, collection: ctx.colFolder || undefined };
   archivesIn(root).forEach(f => fileJob(f, top));
   if (imagesIn(root).length) {
-    const nm = ctx.seriesId ? `Chapter ${new Date().toISOString().slice(0, 10)}` : `Images ${new Date().toISOString().slice(0, 10)}`;
-    packJob(nm, imagesIn(root), ctx.seriesId ? top : { ...top, folder: nm });
+    const m = folderMeta(root);
+    const nm = tidyName(m.title || '') || (ctx.seriesId ? `Chapter ${new Date().toISOString().slice(0, 10)}` : `Images ${new Date().toISOString().slice(0, 10)}`);
+    packJob(nm, imagesIn(root), ctx.seriesId ? top : { ...top, folder: safeName(tidyName(m.series || '') || nm) }, metaIn(root));
   }
   const planFolder = (d, c) => {
     const subs = Object.values(d.dirs);
@@ -2416,24 +2445,24 @@ function planUploads(items, ctx) {
     const otherSubs = subs.filter(x => !imgSubs.includes(x));
     const arcs = archivesIn(d), imgs = imagesIn(d);
     const asCollection = !c.seriesId && !c.colFolder && (otherSubs.length > 0 || (arcs.length > 1 && !relatedArchives(arcs) && !imgs.length && !imgSubs.length));
-    const seriesPlace = c.seriesId ? { series: c.seriesId } : { collection: c.colFolder || undefined, folder: d.name };
+    const seriesPlace = c.seriesId ? { series: c.seriesId } : { collection: c.colFolder || undefined, folder: safeName(seriesOf(d)) };
     if (asCollection) {
       arcs.forEach(f => fileJob(f, { collection: d.name }));                      // loose = one series each
-      if (imgs.length) packJob(d.name, imgs, { collection: d.name, folder: d.name });
+      if (imgs.length) packJob(titleOf(d), imgs, { collection: d.name, folder: safeName(seriesOf(d)) }, metaIn(d));
       const sg = stemGroups(imgSubs);                                             // "Name 1", "Name 2" → series "Name"
-      sg.groups.forEach(g => g.dirs.forEach(x => packJob(x.name, imagesIn(x), { collection: d.name, folder: safeName(g.name) })));
-      sg.rest.forEach(x => packJob(x.name, imagesIn(x), { collection: d.name, folder: x.name }));
+      sg.groups.forEach(g => g.dirs.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: d.name, folder: safeName(g.name) }, metaIn(x))));
+      sg.rest.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: d.name, folder: safeName(seriesOf(x)) }, metaIn(x)));
       otherSubs.forEach(x => planFolder(x, { colFolder: d.name }));
       return;
     }
-    if (imgs.length) packJob(d.name, imgs, seriesPlace);                          // the folder itself is a chapter
-    imgSubs.forEach(x => packJob(x.name, imagesIn(x), seriesPlace));              // each image subfolder is a chapter
+    if (imgs.length) packJob(titleOf(d), imgs, seriesPlace, metaIn(d));           // the folder itself is a chapter
+    imgSubs.forEach(x => packJob(titleOf(x), imagesIn(x), seriesPlace, metaIn(x))); // each image subfolder is a chapter
     arcs.forEach(f => fileJob(f, seriesPlace));
     otherSubs.forEach(x => planFolder(x, c));
   };
   // image folders dropped side by side: "Name 1", "Name 2"… → one series "Name", a chapter each
   const tg = ctx.seriesId ? { groups: [], rest: [] } : stemGroups(Object.values(root.dirs).filter(isImageFolder));
-  tg.groups.forEach(g => g.dirs.forEach(x => packJob(x.name, imagesIn(x), { collection: ctx.colFolder || undefined, folder: safeName(g.name) })));
+  tg.groups.forEach(g => g.dirs.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: ctx.colFolder || undefined, folder: safeName(g.name) }, metaIn(x))));
   const grouped = new Set(tg.groups.flatMap(g => g.dirs));
   Object.values(root.dirs).filter(d => !grouped.has(d)).forEach(d => planFolder(d, ctx));
   return jobs;
@@ -2455,16 +2484,16 @@ const stemOf = f => f.name.replace(/\.[^.]+$/, '');
 function cosplayUnits(root) {
   const units = [];
   const stamp = `Set ${new Date().toISOString().slice(0, 10)}`;
-  if (mediaIn(root).length) units.push({ name: stamp, media: mediaIn(root) });
+  if (mediaIn(root).length) units.push({ name: tidyName(folderMeta(root).title || '') || stamp, media: mediaIn(root), extras: metaIn(root) });
   booksIn(root).forEach(f => units.push({ name: stemOf(f), file: f }));
   const walk = (d, parent) => {
     if (isLeaf(d)) {
-      if (mediaIn(d).length) units.push({ name: d.name, media: mediaIn(d), parent });
+      if (mediaIn(d).length) units.push({ name: titleOf(d), media: mediaIn(d), parent, extras: metaIn(d) });
       const arcs = booksIn(d);                         // a folder of archives = one set, archives = its variants
       arcs.forEach(f => units.push({ name: stemOf(f), file: f, parent, setHint: mediaIn(d).length ? null : d.name }));
       return;
     }
-    if (mediaIn(d).length) units.push({ name: d.name, media: mediaIn(d), parent });
+    if (mediaIn(d).length) units.push({ name: titleOf(d), media: mediaIn(d), parent, extras: metaIn(d) });
     booksIn(d).forEach(f => units.push({ name: stemOf(f), file: f, parent: d.name }));
     Object.values(d.dirs).sort((a, b) => natCmp(a.name, b.name)).forEach(x => walk(x, d.name));
   };
@@ -2479,7 +2508,7 @@ function planCosplay(items, ctx, plans = {}) {
       : { collection: ctx.colFolder || p.cosplayer || u.parent || undefined, folder: safeName(u.setHint || p.set || u.name) };
     if (u.file) { jobs.push({ f: u.file, name: u.file.name, size: u.file.size, ...place }); continue; }
     if (u.media.some(f => IMG_RE.test(f.name))) {     // photos (± videos in their place) → <name>.zip
-      jobs.push({ name: safeName(u.name) + '.zip', images: u.media, size: u.media.reduce((n, f) => n + f.size, 0), packed: true, ...place });
+      jobs.push({ name: safeName(u.name) + '.zip', images: u.media, extras: u.extras || [], size: u.media.reduce((n, f) => n + f.size, 0), packed: true, ...place });
     } else {                                          // video-only variant → its own folder of videos
       const sub = safeName(u.name);
       u.media.forEach(f => jobs.push({ f, name: f.name, size: f.size, ...place, folder: place.folder ? `${place.folder}/${sub}` : sub }));
@@ -2521,16 +2550,17 @@ function askDialog({ title, body, yes = 'Yes', no = 'No' }) {
 /* ---------- tiny ZIP writer (STORE) so image folders become .cbz in the browser ---------- */
 const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC_T[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
-async function makeCbz(images, onStep) {
+async function makeCbz(images, onStep, extras = []) {
   const enc = new TextEncoder(), parts = [], central = [];
   let offset = 0;
-  const pad = String(images.length).length;
-  for (let i = 0; i < images.length; i++) {
-    const f = images[i];
+  const pad = String(images.length).length, all = [...images, ...extras];
+  for (let i = 0; i < all.length; i++) {
+    const f = all[i];
     const data = new Uint8Array(await f.arrayBuffer());
     const crc = crc32(data);
     const ext = (f.name.match(/\.[^.]+$/) || ['.jpg'])[0].toLowerCase();
-    const name = enc.encode(String(i + 1).padStart(Math.max(3, pad), '0') + ext);   // stable reading order
+    const name = enc.encode(i >= images.length ? f.name                            // metadata.json / ComicInfo.xml as they are
+      : String(i + 1).padStart(Math.max(3, pad), '0') + ext);                      // pages: stable reading order
     const lh = new DataView(new ArrayBuffer(30));
     lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
     lh.setUint16(12, 0x21, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true);
@@ -2541,18 +2571,19 @@ async function makeCbz(images, onStep) {
     ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
     parts.push(lh, name, f); central.push(ch, name);
     offset += 30 + name.length + data.length;
-    onStep?.(i + 1, images.length);
+    onStep?.(Math.min(i + 1, images.length), images.length);
   }
   const cdSize = central.reduce((n, p) => n + p.byteLength, 0);
   const end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true); end.setUint16(8, images.length, true); end.setUint16(10, images.length, true);
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, all.length, true); end.setUint16(10, all.length, true);
   end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
   return new Blob([...parts, ...central, end], { type: 'application/zip' });
 }
 
 async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   const items = input.map(x => x.file ? x : { file: x, path: x.webkitRelativePath || x.name });
-  let usable = items.filter(it => BOOK_RE.test(it.file.name) || IMG_RE.test(it.file.name) || VIDEO_RE.test(it.file.name));
+  let usable = items.filter(it => BOOK_RE.test(it.file.name) || IMG_RE.test(it.file.name) || VIDEO_RE.test(it.file.name) || META_RE.test(it.file.name));
+  await readMeta(usable);
   // images lying next to archives (posters, covers, scans of the box…) would be packed into a chapter / set of
   // their own — ask first. A drop of *only* images is a photo set / chapter on purpose: no question then.
   const stray = strayImages(usable);
@@ -2613,7 +2644,7 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
 async function putFile(r) {
   if (r.packed && !(r.f instanceof Blob)) {
     r.state = 'up'; r.msg = 'Packing…'; renderUploads();
-    try { r.f = await makeCbz(r.images, (i, n) => { if (r.cancel) throw new Error('cancelled'); r.msg = `Packing ${i}/${n}`; r.p = i / n * .3; renderUploads(); }); }
+    try { r.f = await makeCbz(r.images, (i, n) => { if (r.cancel) throw new Error('cancelled'); r.msg = `Packing ${i}/${n}`; r.p = i / n * .3; renderUploads(); }, r.extras); }
     catch (err) { if (r.cancel) return markCancelled(r); r.state = 'err'; r.p = 1; r.msg = 'Couldn’t read images'; renderUploads(); return; }
     if (r.cancel) return markCancelled(r);
     r.images = null;
@@ -2731,7 +2762,7 @@ function favCount(f) {
 function favSeriesCard(s, k) {
   const i = seriesInfo(s), one = s.books.length === 1;
   return `<button class="card ${seriesTrashed(s) ? 'trashed' : newCount(s) && !one ? 'unread' : ''}" data-series="${s.id}" ${one ? `data-single="${s.books[0].id}"` : ''} style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${seriesCover(s, 320)}${i.unread === 0 ? '<span class="badge done">READ</span>' : ''}${s.raw || s.jxl || s.heic || s.avif || s.optimized ? `<div class="blc">${fmtPills(s)}</div>` : ''}</div>
+    <div class="cover">${seriesCover(s, 320)}${i.unread === 0 ? '<span class="badge done">READ</span>' : ''}${s.raw || s.jxl || s.heic ? `<div class="blc">${fmtPills(s)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
     <div class="ct">${escWrap(s.name)}</div>
     <div class="cm">${one ? progressText(s.books[0]) : countLabel(s)} · ${esc(libName(s.library))}</div>
@@ -2740,7 +2771,7 @@ function favSeriesCard(s, k) {
 function favSetCard(b, k) {
   const glow = bookGlow(b, true);                                   // favourited sets: always Cosplay
   return `<button class="card ch ${isDone(b) ? 'done' : ''} ${b.trashed ? 'trashed' : glow}" data-open="${b.id}" style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}${b.format === 'video' ? '<span class="badge fmt">▶ VIDEO</span>' : ''}${b.raw || b.jxl || b.heic || b.avif || b.optimized ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
+    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}${b.format === 'video' ? '<span class="badge fmt">▶ VIDEO</span>' : ''}${b.raw || b.jxl || b.heic ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(bookFrac(b) * 100)}%"></i></div>
     <div class="ct">${escWrap(b.label)}</div>
     <div class="cm">📸 ${esc(S.seriesById[b.seriesId]?.name || b.series)}</div>
@@ -2812,18 +2843,25 @@ const menuTarget = () => {
   }
   return S.books[M.id];
 };
+function newCollection(anchor, lid) {
+  return openPrompt(anchor, { title: `New ${V(lid).g}`, hint: `A folder that groups ${pl(V(lid).s)} inside ${libName(lid)}.`, placeholder: 'e.g. Isekai, Favourites, 2026 releases', button: 'Create',
+    run: async name => { const r = await jsonFetch('POST', `/api/libraries/${lid}/collections`, { name }); history.pushState(null, '', `#/collection/${r.id}`); appToast(`Created ${name}`); await load(); } });
+}
 // a library in the sidebar: right-click / long-press
 function renderLibraryMenu() {
   const l = S.libById[M.id]; if (!l) return closeMenu();
   const m = $('#menu');
   m.innerHTML = `<div class="mhead"><b>${esc(l.name)}</b><small>${esc(plural(l.series || 0, V(l.id).s))} · ${esc(plural(l.books || 0, 'file'))}</small></div>
+    <button data-libmenu="newcol">${ico('plus', 17)} New ${esc(V(l.id).g)}…</button>
     <button data-libmenu="settings">${ico('sliders', 17)} Library settings</button>`;
   m.classList.add('on'); $('#menuShade').classList.add('on'); placeMenu();
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-libmenu]'); if (!b) return;
   e.preventDefault(); e.stopPropagation();
-  const l = S.libById[M.id]; closeMenu();
+  const l = S.libById[M.id], anchor = M.anchor;
+  if (l && b.dataset.libmenu === 'newcol') return newCollection(anchor, l.id);
+  closeMenu();
   if (l) openLibModal(l);
 }, true);
 function openSeriesBatchMenu(ids, anchor, view = 'main') {

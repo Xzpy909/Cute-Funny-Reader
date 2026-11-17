@@ -450,11 +450,12 @@ def test_cosplay_photo_folders_are_packed_as_zip(page):
 
 def test_top_bar_scope_and_add(home_page):
     pg = home_page
-    assert pg.inner_text("#scopeName") == "Everything"
+    assert pg.get_attribute("#btnScope", "aria-label") == "Search in: everything" and pg.inner_text("#scopeName") == ""
     assert pg.evaluate("getComputedStyle(document.getElementById('topBar')).backdropFilter").startswith("blur")
     pg.click("#btnScope")
     pg.locator("#topMenu [data-scope]", has_text="Comics").click()
-    pg.wait_for_function("location.hash.startsWith('#/library/') && document.getElementById('scopeName').textContent === 'Comics'")
+    pg.wait_for_function("location.hash.startsWith('#/library/') && document.getElementById('btnScope').title === 'Search in: Comics'")
+    assert pg.inner_text("#scopeName") == "C"                                  # the library's initial on its colour
     assert pg.evaluate("document.activeElement.id") == "q"
     pg.click("#btnScope"); pg.locator("#topMenu [data-scope='']").click()
     pg.wait_for_function("!location.hash.startsWith('#/library/')")
@@ -521,18 +522,49 @@ def test_optimize_from_the_menu_then_undo(server, browser):
         pg.wait_for_function("OPT.jobs.length && OPT.jobs[0].state === 'done'", timeout=30000)
         pg.wait_for_function("(() => { const bs = Object.values(S.books).filter(b => isCosplay(b.library)); return bs.length === 2 && bs.every(b => b.avif && b.canUndo); })()", timeout=15000)
         assert "Done" in pg.inner_text("#jobs")
+        assert pg.evaluate("Object.values(S.books).filter(b => isCosplay(b.library)).every(b => b.optimized)")   # marked internally
         pg.locator(cos, has_text="Mirelle").first.click()
-        pg.wait_for_selector("#grid .card .optmark")                   # optimized: a small ✨, not the AVIF pill
-        assert not pg.locator("#grid .card .avifpill").count()
-        native, optimized = pg.evaluate("[fmtPills({avif: true}), fmtPills({avif: true, optimized: true})]")
-        assert "avifpill" in native and "optmark" not in native               # AVIF from the start: the pill
-        assert "optmark" in optimized and "avifpill" not in optimized
+        pg.wait_for_selector("#grid .card")
+        assert "AVIF" not in pg.inner_text("#grid") and "✨" not in pg.inner_text("#grid")       # … but nothing on the cards
         pg.go_back(); pg.wait_for_selector(cos)
         pg.locator(cos, has_text="Mirelle").first.click(button="right")
         pg.locator("#menu [data-mact=unoptimize]").click()
         pg.wait_for_function("(() => { const bs = Object.values(S.books).filter(b => isCosplay(b.library)); return bs.length === 2 && bs.every(b => !b.avif && !b.canUndo); })()", timeout=15000)
         pg.click("#jobs [data-jact=dismiss]")
         pg.wait_for_selector("#jobs", state="hidden")
+
+
+def test_library_header_and_menu(page):
+    # the header keeps only "Select files"; a new collection and the settings come from the library's menu
+    btns = page.locator("#libActions button").all_inner_texts()
+    assert btns == ["☑ Select files"], btns
+    page.locator(".side [data-lib]", has_text="Comics").first.click(button="right")
+    assert page.is_visible("#menu [data-libmenu=newcol]") and page.is_visible("#menu [data-libmenu=settings]")
+    page.click("#menu [data-libmenu=newcol]")
+    page.wait_for_selector("#mPromptIn")
+    page.keyboard.press("Escape")
+
+
+def test_uploaded_folder_uses_its_metadata(page):
+    # a dropped folder of images + metadata.json / ComicInfo.xml: the metadata goes into the file and names it
+    r = page.evaluate("""async () => {
+      const img = n => new File([new Uint8Array([255, 216, 255, 217])], n, { type: 'image/jpeg' });
+      const items = [
+        { path: 'scan_0042/001.jpg', file: img('001.jpg') }, { path: 'scan_0042/002.jpg', file: img('002.jpg') },
+        { path: 'scan_0042/metadata.json', file: new File(['{"title": "Starfall Side Story", "tags": ["x"]}'], 'metadata.json') },
+        { path: 'raw_07/001.jpg', file: img('001.jpg') },
+        { path: 'raw_07/ComicInfo.xml', file: new File(['<ComicInfo><Series>Moonforge</Series><Number>7</Number></ComicInfo>'], 'ComicInfo.xml') },
+        { path: 'plain/001.jpg', file: img('001.jpg') } ];
+      await readMeta(items);
+      const jobs = planUploads(items, {});
+      const zip = await makeCbz(jobs[0].images, null, jobs[0].extras);
+      const text = new TextDecoder('latin1').decode(new Uint8Array(await zip.arrayBuffer()));
+      return { jobs: jobs.map(j => [j.name, j.folder, j.extras.map(f => f.name)]), inZip: text.includes('metadata.json') && text.includes('Starfall Side Story') };
+    }""")
+    assert sorted(r["jobs"]) == sorted([["Starfall Side Story.cbz", "Starfall Side Story", ["metadata.json"]],
+                                        ["Moonforge 7.cbz", "Moonforge", ["ComicInfo.xml"]],
+                                        ["plain.cbz", "plain", []]])
+    assert r["inZip"]
 
 
 def test_zz_nothing_went_missing(home_page):
