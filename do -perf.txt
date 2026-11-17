@@ -2,7 +2,6 @@ Speed, in order of likely impact
 
 Clean-up
 Split the big files. app.js is one ~240 KB file with global state and one giant click handler. library.py (~160 KB) mixes parsing, scanning, file moves, caches and transcoding. The CSS is hand-minified one-liners.
-Keep the name-parsing rules in one place. They exist in both JavaScript and Python and have already drifted (the Name Ch.1 bug). The server already plans Cosplay uploads (cosplay-plan); the browser still has its own planner too. The server should plan all uploads, with the browser only showing the plan.
 Remaining leftovers: the jxl_* names (_jxl_dir, JXL_TTL, cache/jxl) now also cover HEIC and should get a neutral name.
 What I’d redesign
 One background job system with live progress. Scans, transcoding, big renames, deletes, the trash mover and the planned Optimize feature would share it. It replaces polling and makes the working pill show real progress.

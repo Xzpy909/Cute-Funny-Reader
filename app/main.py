@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 
 from .auth import COOKIE, SESSION_DAYS, Accounts
 from .store import Db, Store
-from .library import cosplay_plan as lib_cosplay_plan, COL_MARK, CONFIG_DIR, LIB_ROOT, safe_component, MEDIA_EXT, REPACK_EXT, REPACK_KIND, VIDEO_EXT, Library, is_avif, is_heic, is_jxl, is_rar, needs_transcode, is_raw, is_video, repack_to_cbz
+from .library import COL_MARK, CONFIG_DIR, LIB_ROOT, safe_component, MEDIA_EXT, REPACK_EXT, REPACK_KIND, VIDEO_EXT, Library, is_avif, is_heic, is_jxl, is_rar, needs_transcode, is_raw, is_video, repack_to_cbz
 
 __version__ = "1.7.3"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -690,6 +690,20 @@ async def pack_file(pid: str, name: str, request: Request):
     return {"ok": True}
 
 
+@app.post("/api/libraries/{lid}/plan")
+def upload_plan(lid: str, body: dict = Body(...)):
+    """What a drop becomes (app/uploadplan.py): the browser sends the dropped paths and sizes — plus the text of
+    any metadata.json / ComicInfo.xml — and carries out the jobs it gets back."""
+    from .uploadplan import plan
+    l = own_lib(lid)
+    series = body.get("series") or None
+    own_series(series)
+    items = [{"path": str(it.get("path") or ""), "size": int(it.get("size") or 0)}
+             for it in (body.get("items") or [])[:50000] if isinstance(it, dict)]
+    meta = {k: v[:200_000] for k, v in (body.get("meta") or {}).items() if isinstance(v, str)}
+    return {"jobs": plan(l, items, meta, series, body.get("collection") or None, str(body.get("today") or "")[:10])}
+
+
 @app.post("/api/packs/{pid}/finish")
 async def pack_finish(pid: str, name: str, request: Request, series: str | None = None,
                       collection: str | None = None, folder: str | None = None, batch: str | None = None):
@@ -1091,15 +1105,6 @@ def transcode_start(bid: str):
 @app.get("/api/books/{bid}/transcode")
 def transcode_status(bid: str):
     return lib.transcode_status(book_or_404(bid))
-
-
-@app.post("/api/libraries/{lid}/cosplay-plan")
-def cosplay_plan(lid: str, body: dict = Body(...)):
-    """Where dropped Cosplay sets go — {names: [...]} → {plans: {name: {cosplayer, set}}}.
-    The uploader asks first, so the naming rules live only here."""
-    l = own_lib(lid)
-    names = [str(n) for n in (body.get("names") or [])][:5000]
-    return {"plans": lib_cosplay_plan(LIB_ROOT / l["path"], names)}
 
 
 @app.get("/api/books/{bid}/thumbs/{n}")

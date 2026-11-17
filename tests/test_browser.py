@@ -439,10 +439,13 @@ def test_home_shows_rows_instead_of_one_shelf(home_page):
 
 
 def test_cosplay_photo_folders_are_packed_as_zip(page):
-    names = page.evaluate("""() => {
+    # what a drop becomes is planned on the server (app/uploadplan.py); the page only carries the plan out
+    names = page.evaluate("""async () => {
       const f = n => new File(['x'], n, { type: 'image/jpeg' });
-      const items = ['001.jpg', '002.jpg'].map(n => ({ path: '/Circuit Hunter Mika Normal/' + n, file: f(n) }));
-      return { cos: planCosplay(items, {}, {}).map(j => j.name), com: planUploads(items, {}).map(j => j.name) };
+      const items = ['001.jpg', '002.jpg'].map(n => ({ path: 'Circuit Hunter Mika Normal/' + n, file: f(n) }));
+      const libs = await (await fetch('/api/libraries')).json(), all = libs.libraries || libs;
+      const id = name => all.find(l => l.name === name).id;
+      return { cos: (await planDrop(id('Cos'), items)).map(j => j.name), com: (await planDrop(id('Comics'), items)).map(j => j.name) };
     }""")
     assert names["cos"] == ["Circuit Hunter Mika Normal.zip"]
     assert names["com"] == ["Circuit Hunter Mika Normal.cbz"]       # comics libraries keep .cbz
@@ -555,12 +558,11 @@ def test_uploaded_folder_uses_its_metadata(page):
         { path: 'raw_07/001.jpg', file: img('001.jpg') },
         { path: 'raw_07/ComicInfo.xml', file: new File(['<ComicInfo><Series>Moonforge</Series><Number>7</Number></ComicInfo>'], 'ComicInfo.xml') },
         { path: 'plain/001.jpg', file: img('001.jpg') } ];
-      await readMeta(items);
-      const jobs = planUploads(items, {});
-      const plan = jobs.map(j => [j.name, j.folder, j.extras.map(f => f.name)]);
-      // the folder is packed on the server: send it there for real and look at what came out
       const libs = await (await fetch('/api/libraries')).json();
       const lib = (libs.libraries || libs).find(l => l.name === 'Comics').id;
+      const jobs = await planDrop(lib, items);                        // planned on the server, metadata included
+      const plan = jobs.map(j => [j.name, j.folder, j.extras.map(f => f.name)]);
+      // the folder is packed on the server: send it there for real and look at what came out
       const row = { ...jobs[0], f: { size: 0 }, lib, state: 'queued', p: 0 };
       await putFile(row);
       return { plan, state: row.state, msg: row.msg, path: row.path };

@@ -2409,181 +2409,23 @@ $('#filePick').addEventListener('change', e => {
   if (files.length && UP.pickTarget) uploadFiles(UP.pickTarget, files, UP.pickSeries, UP.pickCol);
 });
 
-/* ---------- folder planner: decide what each dropped folder becomes ----------
-   folder of images                    → a series with one chapter (packed into <folder>.cbz)
-   folder whose subfolders are images  → a series, one chapter per subfolder
-   folder of numbered chapters         → a series (folder name = series name)
-   folder of unrelated archives        → a collection, each archive its own series
-   folder of series folders            → a collection containing those series            */
+/* ---------- what a drop becomes is planned on the server (app/uploadplan.py) — one set of naming rules ---------- */
 const IMG_RE = /\.(jpe?g|png|webp|avif|gif|bmp|tiff?|jxl|heic|heif)$/i;
 const natCmp = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-const tidyName = v => v.replace(/[\s_]+/g, ' ').replace(/^[\s\-_.]+|[\s\-_.]+$/g, '');
-const safeName = v => v.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^[\s.]+|[\s.]+$/g, '').slice(0, 150) || 'Untitled';
-function seriesStem(name, isFile = true) {
-  let s = isFile ? name.replace(/\.[^.]+$/, '') : name, u;   // folders have no extension: "Name Ch.1" keeps its ".1"
-  while ((u = s.replace(/\s*(?:\[[^\[\](){}]*\]|\([^\[\](){}]*\)|\{[^\[\](){}]*\})/g, ' ')) !== s) s = u;   // innermost first: nested groups go whole
-  const re = /(?:^|[\s_\-.])(c|ch|chap|chapter|part|pt|ep|episode|v|vol|volume|#)\.?\s*(\d+(?:\.\d+)?)(?=$|[\s_\-.])/ig;
-  let m, last = null;
-  while ((m = re.exec(s))) last = m;
-  if (last) return { num: +last[2], before: s.slice(0, last.index) };
-  const t = s.match(/\s(\d{1,4}(?:\.\d+)?)\s*$/);
-  return t ? { num: +t[1], before: s.slice(0, t.index) } : { num: null, before: s };
-}
-function relatedArchives(files) {
-  if (files.length < 2) return true;
-  const parsed = files.map(f => seriesStem(f.name));
-  const keys = new Set(parsed.filter(p => p.num != null).map(p => tidyName(p.before).toLowerCase()));
-  const loose = parsed.filter(p => p.num == null);   // "Name.cbz" beside "Name - Part 2.cbz" is part 1 of the same series
-  return keys.size === 1 && (loose.length === 0 || (loose.length === 1 && keys.has(tidyName(loose[0].before).toLowerCase())));
-}
-function fileTree(items) {
-  const root = { name: '', dirs: {}, files: [] };
-  for (const it of items) {
-    const parts = it.path.split('/').filter(Boolean);
-    let node = root;
-    for (const p of parts.slice(0, -1)) node = node.dirs[p] ||= { name: p, dirs: {}, files: [] };
-    node.files.push(it.file);
-  }
-  return root;
-}
-// metadata.json / ComicInfo.xml inside a dropped folder of images go into the packed file, and its title names it:
-//   metadata.json "title"  → the file and its series / set     ComicInfo.xml: Series → the series, Title → the file
 const META_RE = /^(metadata\.json|comicinfo\.xml)$/i;
-const META = new Map();                                // File → { title, series } (filled by readMeta before planning)
-const metaIn = n => n.files.filter(f => META_RE.test(f.name));
-function folderMeta(n) {
-  const out = {};
-  for (const f of metaIn(n)) {                         // metadata.json wins over ComicInfo.xml
-    const m = META.get(f) || {};
-    if (/\.json$/i.test(f.name)) { if (m.title) out.title = m.title; }
-    else { out.title ||= m.title; out.series = m.series; }
-  }
-  return out;
-}
-const titleOf = n => tidyName(folderMeta(n).title || '') || n.name;                       // the packed file
-const seriesOf = n => { const m = folderMeta(n); return tidyName(m.series || m.title || '') || n.name; };   // its folder
-async function readMeta(items) {
-  META.clear();
-  await Promise.all(items.filter(it => META_RE.test(it.file.name)).map(async it => {
-    try {
-      const text = await it.file.text();
-      if (/\.json$/i.test(it.file.name)) {
-        const d = JSON.parse(text.replace(/^\uFEFF/, ''));
-        META.set(it.file, { title: typeof d?.title === 'string' ? d.title.trim() : '' });
-      } else {
-        const x = new DOMParser().parseFromString(text, 'application/xml');
-        const tag = t => x.getElementsByTagName(t)[0]?.textContent?.trim() || '';
-        const series = tag('Series'), num = tag('Number');
-        META.set(it.file, { title: tag('Title') || (series && num ? `${series} ${num}` : ''), series });
-      }
-    } catch { /* unreadable: the folder name stays */ }
+// the plan for a drop: the server gets paths, sizes and the text of metadata.json / ComicInfo.xml; the jobs it
+// returns point back into `usable` by index
+async function planDrop(lid, usable, seriesId, colFolder) {
+  const meta = {};
+  await Promise.all(usable.map(async (it, i) => {
+    if (META_RE.test(it.file.name) && it.file.size < 200_000) { try { meta[i] = await it.file.text(); } catch { /* unreadable: names stay */ } }
   }));
-}
-// a folder holding images packs ALL its media (videos between photos stay in order); videos alone stay separate files
-const hasImages = n => n.files.some(f => IMG_RE.test(f.name));
-const archivesIn = n => n.files.filter(f => BOOK_RE.test(f.name) || (!hasImages(n) && VIDEO_RE.test(f.name))).sort((a, b) => natCmp(a.name, b.name));
-const imagesIn = n => hasImages(n) ? n.files.filter(f => IMG_RE.test(f.name) || VIDEO_RE.test(f.name)).sort((a, b) => natCmp(a.name, b.name)) : [];
-const isImageFolder = n => imagesIn(n).length && !archivesIn(n).length && !Object.keys(n.dirs).length;
-// sibling folders "Name 1", "Name 2" / "Name Ch.1", "Name Ch.2" (+ a plain "Name" = part 1) belong together:
-// → { groups: [{ name: 'Name', dirs: [...] }], rest: [folders that stand alone] }
-function stemGroups(dirs) {
-  const keyOf = d => { const p = seriesStem(d.name, false), name = tidyName(p.before); return { key: name.toLowerCase(), name, num: p.num }; };
-  const groups = new Map();
-  for (const d of dirs) { const k = keyOf(d); if (k.num != null && k.key) { if (!groups.has(k.key)) groups.set(k.key, { name: k.name, dirs: [] }); groups.get(k.key).dirs.push(d); } }
-  for (const d of dirs) { const k = keyOf(d); if (k.num == null && groups.has(k.key)) groups.get(k.key).dirs.unshift(d); }
-  const out = [...groups.values()].filter(g => g.dirs.length >= 2);
-  out.forEach(g => { const [lead, ...nums] = g.dirs; const plain = keyOf(lead).num == null;
-    g.dirs = plain ? [lead, ...nums.sort((a, b) => keyOf(a).num - keyOf(b).num)] : g.dirs.sort((a, b) => keyOf(a).num - keyOf(b).num); });
-  const used = new Set(out.flatMap(g => g.dirs));
-  return { groups: out, rest: dirs.filter(d => !used.has(d)) };
-}
-function planUploads(items, ctx) {
-  const jobs = [], root = fileTree(items);
-  const fileJob = (f, place) => jobs.push({ f, name: f.name, size: f.size, ...place });
-  const packJob = (name, images, place, extras = []) => jobs.push({ name: safeName(name) + '.cbz', images, extras, size: images.reduce((n, f) => n + f.size, 0), packed: true, ...place });
-  const top = { series: ctx.seriesId || undefined, collection: ctx.colFolder || undefined };
-  archivesIn(root).forEach(f => fileJob(f, top));
-  if (imagesIn(root).length) {
-    const m = folderMeta(root);
-    const nm = tidyName(m.title || '') || (ctx.seriesId ? `Chapter ${new Date().toISOString().slice(0, 10)}` : `Images ${new Date().toISOString().slice(0, 10)}`);
-    packJob(nm, imagesIn(root), ctx.seriesId ? top : { ...top, folder: safeName(tidyName(m.series || '') || nm) }, metaIn(root));
-  }
-  const planFolder = (d, c) => {
-    const subs = Object.values(d.dirs);
-    const imgSubs = subs.filter(isImageFolder).sort((a, b) => natCmp(a.name, b.name));
-    const otherSubs = subs.filter(x => !imgSubs.includes(x));
-    const arcs = archivesIn(d), imgs = imagesIn(d);
-    const asCollection = !c.seriesId && !c.colFolder && (otherSubs.length > 0 || (arcs.length > 1 && !relatedArchives(arcs) && !imgs.length && !imgSubs.length));
-    const seriesPlace = c.seriesId ? { series: c.seriesId } : { collection: c.colFolder || undefined, folder: safeName(seriesOf(d)) };
-    if (asCollection) {
-      arcs.forEach(f => fileJob(f, { collection: d.name }));                      // loose = one series each
-      if (imgs.length) packJob(titleOf(d), imgs, { collection: d.name, folder: safeName(seriesOf(d)) }, metaIn(d));
-      const sg = stemGroups(imgSubs);                                             // "Name 1", "Name 2" → series "Name"
-      sg.groups.forEach(g => g.dirs.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: d.name, folder: safeName(g.name) }, metaIn(x))));
-      sg.rest.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: d.name, folder: safeName(seriesOf(x)) }, metaIn(x)));
-      otherSubs.forEach(x => planFolder(x, { colFolder: d.name }));
-      return;
-    }
-    if (imgs.length) packJob(titleOf(d), imgs, seriesPlace, metaIn(d));           // the folder itself is a chapter
-    imgSubs.forEach(x => packJob(titleOf(x), imagesIn(x), seriesPlace, metaIn(x))); // each image subfolder is a chapter
-    arcs.forEach(f => fileJob(f, seriesPlace));
-    otherSubs.forEach(x => planFolder(x, c));
-  };
-  // image folders dropped side by side: "Name 1", "Name 2"… → one series "Name", a chapter each
-  const tg = ctx.seriesId ? { groups: [], rest: [] } : stemGroups(Object.values(root.dirs).filter(isImageFolder));
-  tg.groups.forEach(g => g.dirs.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: ctx.colFolder || undefined, folder: safeName(g.name) }, metaIn(x))));
-  const grouped = new Set(tg.groups.flatMap(g => g.dirs));
-  Object.values(root.dirs).filter(d => !grouped.has(d)).forEach(d => planFolder(d, ctx));
-  return jobs;
-}
-
-/* ---------- Cosplay planner: Cosplayer → Set → Variant ----------
-   Every set in a drop — a folder of photos (± videos) or an archive — is one *unit*; it becomes a variant.
-   The server says which cosplayer and set each unit belongs to (POST …/cosplay-plan), so the naming rules
-   live in one place (app/library.py: cosplay_name / variant_groups):
-     "[Dreva(Solene)]My Lucky Bunny Bonus / Normal / S_version"  →  Solene / My Lucky Bunny / 3 variants
-   A dropped folder of sets ("Solene/…") names the cosplayer when the set names don't; a folder holding only
-   archives is one set with each archive a variant. Dropped onto a set page: everything joins that set.
-   The circle (Dreva) stays in the names → shown as publisher. Photo units are packed into <name>.zip,
-   video-only units stay folders of videos. */
-const mediaIn = n => n.files.filter(f => IMG_RE.test(f.name) || VIDEO_RE.test(f.name)).sort((a, b) => natCmp(a.name, b.name));
-const booksIn = n => n.files.filter(f => BOOK_RE.test(f.name)).sort((a, b) => natCmp(a.name, b.name));
-const isLeaf = n => !Object.keys(n.dirs).length;
-const stemOf = f => f.name.replace(/\.[^.]+$/, '');
-function cosplayUnits(root) {
-  const units = [];
-  const stamp = `Set ${new Date().toISOString().slice(0, 10)}`;
-  if (mediaIn(root).length) units.push({ name: tidyName(folderMeta(root).title || '') || stamp, media: mediaIn(root), extras: metaIn(root) });
-  booksIn(root).forEach(f => units.push({ name: stemOf(f), file: f }));
-  const walk = (d, parent) => {
-    if (isLeaf(d)) {
-      if (mediaIn(d).length) units.push({ name: titleOf(d), media: mediaIn(d), parent, extras: metaIn(d) });
-      const arcs = booksIn(d);                         // a folder of archives = one set, archives = its variants
-      arcs.forEach(f => units.push({ name: stemOf(f), file: f, parent, setHint: mediaIn(d).length ? null : d.name }));
-      return;
-    }
-    if (mediaIn(d).length) units.push({ name: titleOf(d), media: mediaIn(d), parent, extras: metaIn(d) });
-    booksIn(d).forEach(f => units.push({ name: stemOf(f), file: f, parent: d.name }));
-    Object.values(d.dirs).sort((a, b) => natCmp(a.name, b.name)).forEach(x => walk(x, d.name));
-  };
-  Object.values(root.dirs).sort((a, b) => natCmp(a.name, b.name)).forEach(d => walk(d, null));
-  return units;
-}
-function planCosplay(items, ctx, plans = {}) {
-  const jobs = [];
-  for (const u of cosplayUnits(fileTree(items))) {
-    const p = plans[u.name] || {};
-    const place = ctx.seriesId ? { series: ctx.seriesId }
-      : { collection: ctx.colFolder || p.cosplayer || u.parent || undefined, folder: safeName(u.setHint || p.set || u.name) };
-    if (u.file) { jobs.push({ f: u.file, name: u.file.name, size: u.file.size, ...place }); continue; }
-    if (u.media.some(f => IMG_RE.test(f.name))) {     // photos (± videos in their place) → <name>.zip
-      jobs.push({ name: safeName(u.name) + '.zip', images: u.media, extras: u.extras || [], size: u.media.reduce((n, f) => n + f.size, 0), packed: true, ...place });
-    } else {                                          // video-only variant → its own folder of videos
-      const sub = safeName(u.name);
-      u.media.forEach(f => jobs.push({ f, name: f.name, size: f.size, ...place, folder: place.folder ? `${place.folder}/${sub}` : sub }));
-    }
-  }
-  return jobs;
+  const d = await jsonFetch('POST', `/api/libraries/${lid}/plan`, { items: usable.map(it => ({ path: it.path, size: it.file.size })), meta,
+    series: seriesId || null, collection: colFolder || null, today: new Date().toISOString().slice(0, 10) });
+  const f = i => usable[i].file;
+  return d.jobs.map(j => j.kind === 'pack'
+    ? { name: j.name, images: j.images.map(f), extras: j.extras.map(f), size: j.size, packed: true, series: j.series, collection: j.collection, folder: j.folder }
+    : { f: f(j.file), name: j.name, size: j.size, series: j.series, collection: j.collection, folder: j.folder });
 }
 
 // images in a folder (or the top of the drop) that also holds .cbz/.epub/… archives
@@ -2619,7 +2461,6 @@ function askDialog({ title, body, yes = 'Yes', no = 'No' }) {
 async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   const items = input.map(x => x.file ? x : { file: x, path: x.webkitRelativePath || x.name });
   let usable = items.filter(it => BOOK_RE.test(it.file.name) || IMG_RE.test(it.file.name) || VIDEO_RE.test(it.file.name) || META_RE.test(it.file.name));
-  await readMeta(usable);
   // images lying next to archives (posters, covers, scans of the box…) would be packed into a chapter / set of
   // their own — ask first. A drop of *only* images is a photo set / chapter on purpose: no question then.
   const stray = strayImages(usable);
@@ -2650,14 +2491,8 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   }
   const ignored = items.length - usable.length - strayNote - plainNote;
   let jobs;
-  if (isCosplay(lid)) {                               // ask the server how the set names split, then plan
-    let plans = {};
-    if (!seriesId) {
-      const names = [...new Set(cosplayUnits(fileTree(usable)).map(u => u.name))];
-      try { plans = (await jsonFetch('POST', `/api/libraries/${lid}/cosplay-plan`, { names })).plans || {}; } catch {}
-    }
-    jobs = planCosplay(usable, { seriesId, colFolder }, plans);
-  } else jobs = planUploads(usable, { seriesId, colFolder });
+  try { jobs = await planDrop(lid, usable, seriesId, colFolder); }
+  catch (err) { appToast(`Couldn’t plan this drop: ${err.message}`); return 0; }
   if (!jobs.length && (strayNote || plainNote)) { appToast('Nothing to add — you skipped everything in that drop'); return 0; }
   if (!jobs.length) { UP.rows.push({ f: { size: 0 }, name: `${plural(items.length, 'file')} skipped`, state: 'err', msg: 'No comics, images or videos', p: 1 }); return renderUploads(true); }
   const upBatch = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);   // groups this drop in the upload log
