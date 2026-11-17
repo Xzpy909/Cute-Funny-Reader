@@ -80,8 +80,8 @@ def encode_page(data: bytes, name: str, preset: dict, libtype: str, max_edge: in
             im.thumbnail((max_edge, max_edge), Image.LANCZOS)
             resized = True
         sub = preset.get("subsampling") or "auto"
-        if sub == "auto":                                  # line art keeps full colour detail; photos don't need it
-            sub = "4:2:0" if libtype == "cosplay" else "4:4:4"
+        if sub == "auto":                                  # full colour detail everywhere — line art and photos alike
+            sub = "4:4:4"
         if preset.get("grayscale", True) and not alpha and _is_gray(im):
             im, sub = im.convert("L"), "4:0:0"
         kw = {"quality": int(preset.get("quality", 70)), "speed": int(preset.get("speed", 6)), "subsampling": sub}

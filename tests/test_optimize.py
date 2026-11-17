@@ -287,3 +287,21 @@ def test_storage_numbers_and_dropping_originals(lib):
     assert o.drop_originals("me") == 1
     assert o.storage("me")["kept"]["books"] == 0 and not o.can_undo(big[0]["id"])
     assert lib.get(big[0]["id"])["entries"] == ["001.avif", "002.avif"]   # the conversion stays
+
+
+def test_auto_subsampling_is_444_for_every_library_type(monkeypatch):
+    """Colour pages are encoded 4:4:4 everywhere — Cosplay photos included (black-and-white pages: grayscale)."""
+    from app import optimize as O
+    seen = []
+    real = Image.Image.save
+    def spy(self, fp, format=None, **kw):
+        if (format or "").upper() == "AVIF":
+            seen.append(kw.get("subsampling"))
+        return real(self, fp, format, **kw)
+    monkeypatch.setattr(Image.Image, "save", spy)
+    rng = np.random.default_rng(1)
+    buf = io.BytesIO()
+    Image.fromarray(rng.integers(0, 255, (120, 80, 3), dtype=np.uint8)).save(buf, "PNG")   # colourful → not gray
+    for libtype in ("manga", "comics", "cosplay"):
+        O.encode_page(buf.getvalue(), "001.png", dict(O.DEFAULT_PRESET), libtype)
+    assert seen == ["4:4:4"] * 3
