@@ -110,6 +110,7 @@ class Optimizer:
         self.lib = lib
         self.jobs = Store(lib.db, "optimize_jobs")         # job id → job
         self.kept = Store(lib.db, "optimized")             # book id → what was done, and where the original is
+        self.seen = Store(lib.db, "optimize_seen")         # book id → looked at by auto-optimize (once is enough)
         self.cv = threading.Condition()
         self.live: dict[str, dict] = {}                    # job id → progress of the book being converted
         self._ratio_cache: dict = {}
@@ -457,8 +458,8 @@ class Optimizer:
                 "pages": sum(len(b.get("entries") or []) for b in ok)}
 
     # ---- the job queue
-    def start(self, owner: str, books: list[dict], preset_id: str, keep: bool, max_edge: int, title: str) -> dict:
-        preset = self.preset(preset_id)
+    def start(self, owner: str, books: list[dict], preset_id: str, keep: bool, max_edge: int, title: str, preset: dict | None = None) -> dict:
+        preset = preset or self.preset(preset_id)
         ok = [b for b in books if not self.why_not(b)]
         if not ok:
             raise ValueError("Nothing here can be optimized: " + (self.why_not(books[0]) if books else "nothing selected"))
@@ -472,6 +473,44 @@ class Optimizer:
         with self.cv:
             self.cv.notify_all()
         return job
+
+    # ---- auto-optimize: libraries with a preset chosen convert whatever is added from then on
+    def collect_auto(self, now: float | None = None) -> int:
+        """Queue new books of libraries that have auto-optimize on. Each book is queued once (also when it
+        turned out not to shrink), a moment after it arrived so a batch upload becomes one job."""
+        now = now or time.time()
+        queued = 0
+        for l in self.lib.libraries:
+            pid, since = l.get("autoOptimize"), l.get("autoSince") or 0
+            if not pid:
+                continue
+            fresh = [b for b in self.lib.books.values()
+                     if b["library"] == l["id"] and (b.get("added") or 0) >= since and now - (b.get("added") or 0) >= 20
+                     and not self.seen.get(b["id"]) and not self.kept.get(b["id"])]
+            for b in fresh:
+                self.seen.put(b["id"], {"at": int(now)})
+            fresh = [b for b in fresh if not self.why_not(b)]
+            if not fresh:
+                continue
+            try:
+                preset = self.preset(pid)
+            except ValueError:                             # the chosen preset was deleted: the baseline
+                preset = dict(DEFAULT_PRESET)
+            owner = l.get("owner") or ""
+            job = next((j for j in self.jobs.all().values() if j.get("auto") == l["id"] and j["state"] in ("queued", "running")), None)
+            if job:                                        # more arrived while it runs: the same job grows
+                job["books"] += [b["id"] for b in fresh if b["id"] not in job["books"]]
+                job["pagesTotal"] += sum(len(b.get("entries") or []) for b in fresh)
+                self.jobs.put(job["id"], job)
+            else:
+                for jid, j in self.jobs.all().items():     # one finished "new uploads" line per library is enough
+                    if j.get("auto") == l["id"] and j["state"] == "done":
+                        self.jobs.delete(jid)
+                job = self.start(owner, fresh, preset["id"], True, 0, f"New in {l['name']}", preset=preset)
+                job["auto"] = l["id"]
+                self.jobs.put(job["id"], job)
+            queued += len(fresh)
+        return queued
 
     def list(self, owner: str) -> list[dict]:
         out = []
@@ -555,6 +594,7 @@ class Optimizer:
         _low_priority()
         while True:
             try:
+                self.collect_auto()
                 worked = self.step()
                 if time.time() - self._last_cleanup > 3600:
                     self._last_cleanup = time.time()
@@ -563,5 +603,5 @@ class Optimizer:
                 log.warning("optimizer: %s", e)
                 worked = False
             if not worked:
-                with self.cv:
-                    self.cv.wait(30)
+                with self.cv:                              # (auto-optimize looks for new uploads more often)
+                    self.cv.wait(8 if any(l.get("autoOptimize") for l in self.lib.libraries) else 30)

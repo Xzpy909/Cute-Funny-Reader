@@ -1224,6 +1224,13 @@ class Library:
             lib["type"] = "manga" if lib["rtl"] else ("cosplay" if lib.get("type") == "cosplay" else "comics")
         if patch.get("color"):
             lib["color"] = str(patch["color"])[:20]
+        if "autoOptimize" in patch:                    # ✨ a preset id: new uploads are converted to AVIF by themselves
+            if patch["autoOptimize"]:
+                if lib.get("autoOptimize") is None:
+                    lib["autoSince"] = int(time.time())  # only what arrives from now on
+                lib["autoOptimize"] = str(patch["autoOptimize"])[:40]
+            else:
+                lib.pop("autoOptimize", None); lib.pop("autoSince", None)
         with self.lock:
             self._save_libs()
         if renamed:

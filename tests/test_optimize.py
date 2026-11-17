@@ -202,3 +202,45 @@ def test_the_api_end_to_end(tmp_path, monkeypatch):
     assert c.post("/api/optimize/undo", json={"series": [sid]}).json() == {"restored": 2}
     assert not any(b["avif"] or b["canUndo"] for b in c.get("/api/library").json()["books"])
     assert c.post(f"/api/jobs/{job['id']}/dismiss").status_code == 200 and c.get("/api/jobs").json()["jobs"] == []
+
+
+def test_new_uploads_are_optimized_by_themselves(lib):
+    l = lib.create_library("Cos", "Cos", False, "#fff", "cosplay")
+    root = L.LIB_ROOT / l["path"]
+    make_cbz(root / "Mirelle" / "Garden" / "Old.cbz", {"001.jpg": photo(seed=1)})
+    lib.scan()
+    old = next(iter(lib.books.values()))
+    o = Optimizer(lib)
+    assert o.collect_auto() == 0                                   # off: nothing happens
+    lib.update_library(l["id"], {"autoOptimize": "default"})
+    lib.get_library(l["id"])["autoSince"] = int(time.time()) + 5   # (what was there before stays as it is)
+    make_cbz(root / "Mirelle" / "Lake" / "New 1.cbz", {"001.jpg": photo(seed=2)})
+    make_cbz(root / "Mirelle" / "Lake" / "New 2.cbz", {"001.jpg": photo(seed=3)})
+    lib.scan()
+    for b in lib.books.values():
+        if b["id"] != old["id"]:
+            b["added"] = int(time.time()) + 10
+    assert o.collect_auto(time.time() + 15) == 0                   # just arrived: wait for the rest of the batch
+    assert o.collect_auto(time.time() + 60) == 2
+    assert o.collect_auto(time.time() + 61) == 0                   # each book once
+    job = next(iter(o.jobs.all().values()))
+    assert job["auto"] == l["id"] and job["title"] == "New in Cos" and job["keep"] and len(job["books"]) == 2
+    while o.step():
+        if o.jobs.get(job["id"])["state"] == "done":
+            break
+    by = {b["file"]: b for b in lib.books.values()}
+    assert by["New 1.cbz"]["entries"] == ["001.avif"] and by["Old.cbz"]["entries"] == ["001.jpg"]
+    lib.update_library(l["id"], {"autoOptimize": ""})
+    assert "autoOptimize" not in lib.get_library(l["id"])
+
+
+def test_heic_and_jxl_books_convert_too(lib):
+    import pillow_heif, pillow_jxl  # noqa: F401
+    im = Image.open(io.BytesIO(photo(400, 600)))
+    h, j = io.BytesIO(), io.BytesIO()
+    im.save(h, "HEIF", quality=95); im.save(j, "JXL", quality=95)
+    b = _book(lib, {"001.heic": h.getvalue(), "002.jxl": j.getvalue()})
+    assert L.needs_transcode(b)
+    Optimizer(lib).convert(b, {**P, "quality": 40}, keep=True, max_edge=0)
+    nb = lib.get(b["id"])
+    assert nb["entries"] == ["001.avif", "002.avif"] and not L.needs_transcode(nb)   # opens without waiting now

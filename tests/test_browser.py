@@ -567,6 +567,56 @@ def test_uploaded_folder_uses_its_metadata(page):
     assert r["inZip"]
 
 
+@pytest.fixture(scope="module")
+def heic_server(tmp_path_factory):
+    import io, pillow_heif  # noqa: F401
+    from PIL import Image
+    def heic(color):
+        buf = io.BytesIO(); Image.new("RGB", (400, 600), color).save(buf, "HEIF", quality=90); return buf.getvalue()
+    def build(call, data):
+        lib = call("POST", "/api/libraries", {"name": "Phone", "type": "comics", "color": "#7aa8ff"})
+        for n, color in (("Moonforge 01", "teal"), ("Moonforge 02", "navy")):
+            p = data / lib["path"] / "Moonforge" / f"{n}.cbz"; p.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(p, "w") as z:
+                z.writestr("001.heic", heic(color)); z.writestr("002.heic", heic("gray"))
+    yield from serve(tmp_path_factory.mktemp("heic"), build, 2)
+
+
+def test_library_optimize_auto_setting_and_reader_hint(heic_server, browser):
+    for pg in open_page(heic_server, browser, "Phone"):
+        # the reader offers to convert a HEIC book for good
+        pg.locator("#grid .card").first.click()
+        pg.locator(BOOK).first.click()
+        pg.wait_for_selector("#avifHint")
+        assert "HEIC" in pg.inner_text("#avifHint") and "all 2" in pg.inner_text("#avifHint")
+        pg.click("#avifHint [data-avif=go]")
+        pg.wait_for_selector("#optModal.open .optrow")
+        assert "Moonforge" in pg.inner_text("#optModal h3")
+        pg.click("#optModal [data-opt=cancel]")
+        pg.evaluate("location.hash = '#/'")                                # leave the reader
+        pg.wait_for_function("!document.body.classList.contains('reading')")
+        # library settings: storage numbers, "Optimize whole library", auto-optimize for new uploads
+        pg.locator(".side [data-lib]", has_text="Phone").click(button="right")
+        assert pg.is_visible("#menu [data-libmenu=optimize]")
+        pg.click("#menu [data-libmenu=settings]")
+        pg.wait_for_function("/could still be converted/.test(document.getElementById('libStore').textContent)")
+        assert "2 books" in pg.inner_text("#libStore")
+        pg.wait_for_selector("#libAuto:not([disabled])")
+        pg.select_option("#libAuto", "default")
+        pg.click("#libForm [type=submit]")
+        pg.wait_for_function("S.libraries[0].autoOptimize === 'default'")
+        pg.locator(".side [data-lib]", has_text="Phone").click(button="right")
+        pg.click("#menu [data-libmenu=settings]")
+        pg.wait_for_selector("#libAuto:not([disabled])")
+        assert pg.input_value("#libAuto") == "default"
+        pg.click("#libForm [data-optlib]")
+        pg.wait_for_selector("#optModal.open .optrow")
+        pg.wait_for_function("/2 books/.test(document.getElementById('optHead').textContent)")
+        pg.click("#optModal [data-opt=start]")
+        pg.wait_for_function("OPT.jobs.length && OPT.jobs[0].state === 'done'", timeout=30000)
+        pg.wait_for_function("Object.values(S.books).every(b => b.optimized && !b.transcode)", timeout=15000)
+
+
 def test_zz_nothing_went_missing(home_page):
     names = home_page.evaluate("S.series.map(s => s.name + ':' + s.books.length + (seriesTrashed(s) ? ':trashed' : '')).sort()")
     assert names == ["Beach:1", "Maid:1", "Starfall:2", "Test Novel:2"], names

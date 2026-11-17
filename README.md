@@ -119,6 +119,10 @@ which every current browser shows directly and which is usually much smaller tha
 - **Keep originals** copies the original to `config/originals` for `OPTIMIZE_KEEP_DAYS` (default 14): **Undo optimize**
   in the menu puts it back. A page that wouldn't get smaller, GIFs and videos are left as they are.
 - Supported: `.cbz`, `.zip` and photo folders (`.cb7` sets are skipped for now).
+- **A whole library:** right-click the library → **Optimize library…** (also in Library settings, with how much is
+  left to convert).
+- **New uploads:** Library settings → *New uploads → AVIF · preset* converts whatever is added from then on by itself.
+- A HEIC / JPEG XL book offers **Optimize to AVIF** in the reader, so it no longer has to be transcoded to open.
 
 **Presets:** **Default** (quality 70, speed 6) is built in and can't be deleted — the baseline. Make your own with
 **+ New preset** in the dialog (name, quality 0–100, speed 0–10: lower is smaller but slower) and delete them with ×.

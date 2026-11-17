@@ -1205,6 +1205,26 @@ async function openReader(id, start) {
   catch (e) { stage.innerHTML = `<div class="empty" style="margin:auto">Couldn't open this book (${esc(e.message)})</div>`; return; }
   if (token !== R.token) return;
   if (b.format === 'epub') openText(b, d, start); else openImages(b, d, start);
+  if (b.transcode) suggestAvif(b);
+}
+// A HEIC / JPEG XL book had to be transcoded before it opened: offer to convert it for good.
+function suggestAvif(b) {
+  $('#avifHint')?.remove();
+  const s = S.seriesById[b.seriesId], no = local.get('cf-avif-no', []);
+  if (!s || no.includes(b.seriesId) || OPT.jobs.some(j => j.books.includes(b.id) && j.state !== 'done' && j.state !== 'cancelled')) return;
+  const todo = s.books.filter(x => x.transcode), what = b.heic ? 'HEIC' : b.jxl ? 'JPEG XL' : 'a format browsers can’t show';
+  const h = document.createElement('div'); h.id = 'avifHint'; h.setAttribute('role', 'status');
+  h.innerHTML = `<span>This ${V(b.library).b} is ${what}, so it has to be converted every time the cache runs out. <b>Optimize to AVIF</b> and it opens instantly.</span>
+    <button type="button" class="btn-sm pri" data-avif="go">${ico('spark', 14)} Optimize${todo.length > 1 ? ` all ${todo.length}` : ''}…</button>
+    <button type="button" class="btn-sm" data-avif="no">Not now</button>`;
+  h.addEventListener('click', e => {
+    const a = e.target.closest('[data-avif]')?.dataset.avif; if (!a) return;
+    h.remove();
+    if (a === 'no') return local.set('cf-avif-no', [...no, b.seriesId].slice(-500));
+    openOptimize({ sel: { books: todo.map(x => x.id) }, books: todo, title: s.name });
+  });
+  reader.append(h);
+  setTimeout(() => h.remove(), 20000);
 }
 // JPEG XL / HEIC: browsers (bar Safari) can't show them, so the server converts the pages to PNG first —
 // once, then cached (dropped after JXL_CACHE_DAYS without reading)
@@ -1230,7 +1250,7 @@ async function jxlGate(b, token) {
   return true;
 }
 function shutReader() {
-  document.body.classList.remove('reading');
+  document.body.classList.remove('reading'); $('#avifHint')?.remove();
   flushProgress();
   closeOverlays(); $('#settings').classList.remove('open'); $('#toc').classList.remove('open');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -1999,12 +2019,39 @@ function openLibModal(edit = null, pendingFiles = null) {
       <button type="button" data-ltype="manga"><b>🎌 Manga</b><small>Right ← left reading</small></button>
       <button type="button" data-ltype="cosplay"><b>📸 Cosplay</b><small>Cosplayers → sets → variants · L → R</small></button></div></div>
     <div class="f">Colour<div class="swatches">${SWATCHES.map(c => `<button type="button" data-swatch="${c}" style="--c:${c}" aria-label="Colour ${c}"></button>`).join('')}</div></div>
+    ${edit ? `<div class="f libstore">✨ Optimize
+      <span class="hintline" id="libStore">Measuring…</span>
+      <div class="storerow"><button type="button" class="btn-sm" data-optlib="${edit.id}">${ico('spark', 15)} Optimize whole library…</button>
+        <label for="libAuto">New uploads</label><select id="libAuto" disabled><option value="">stay as they are</option></select></div>
+      <span class="hintline">“New uploads” converts whatever you add from now on to AVIF by itself, with the chosen preset. Originals are kept for Undo as usual.</span></div>` : ''}
     <div class="formerr" id="formErr"></div>
     <div class="formfoot">${edit ? '<button type="button" class="btn-danger" id="btnRemoveLib">Remove library</button>' : ''}<div class="grow"></div>
       <button type="button" class="btn-ghost" data-closemodal>Cancel</button><button type="submit" class="btn-primary">${edit ? 'Save' : 'Create library'}</button></div>`;
   syncModal();
   $('#libModal').classList.add('open');
   setTimeout(() => $('#libName').focus(), 60);
+  if (edit) fillLibStore(edit);
+}
+async function fillLibStore(l) {
+  const mine = () => modal?.edit?.id === l.id;
+  api.get(`/api/libraries/${l.id}/storage`).then(st => {
+    if (!mine() || !$('#libStore')) return;
+    const parts = [fmtBytes(st.bytes)];
+    if (st.optimized) parts.push(`${plural(st.optimized, V(l.id).b)} optimized${st.saved ? ` (saved ${fmtBytes(st.saved)})` : ''}`);
+    parts.push(st.convertible ? `${plural(st.convertible, V(l.id).b)} · ${fmtBytes(st.convertibleBytes)} could still be converted` : 'nothing left to convert');
+    $('#libStore').textContent = parts.join(' · ');
+    $('#libForm [data-optlib]').disabled = !st.convertible;
+  }).catch(() => { if (mine() && $('#libStore')) $('#libStore').textContent = ''; });
+  api.get('/api/optimize/presets').then(p => {
+    const sel = $('#libAuto'); if (!mine() || !sel) return;
+    sel.innerHTML = '<option value="">stay as they are</option>' + p.presets.map(x => `<option value="${esc(x.id)}">→ AVIF · ${esc(x.name)}</option>`).join('');
+    sel.value = p.presets.some(x => x.id === l.autoOptimize) ? l.autoOptimize : l.autoOptimize ? 'default' : '';
+    sel.disabled = false;
+  }).catch(() => {});
+}
+function optimizeLibrary(lid) {
+  const l = S.libById[lid]; if (!l) return;
+  openOptimize({ sel: { libraries: [lid] }, books: Object.values(S.books).filter(b => b.library === lid && !isTrashed(b)), title: l.name });
 }
 function syncModal() {
   $$('#libForm [data-ltype]').forEach(b => b.classList.toggle('on', b.dataset.ltype === modal.type));
@@ -2052,12 +2099,18 @@ $('#libForm').addEventListener('click', async e => {
     location.hash = '#/'; await load();
   }
 });
+$('#libForm').addEventListener('click', e => {
+  const b = e.target.closest('[data-optlib]'); if (!b) return;
+  $('#libModal').classList.remove('open'); modal = null;
+  optimizeLibrary(b.dataset.optlib);
+});
 $('#libForm').addEventListener('submit', async e => {
   e.preventDefault();
   const name = $('#libName').value.trim();
   if (!name) { $('#formErr').textContent = 'Give your library a name'; return $('#libName').focus(); }
   const body = { name, type: modal.type, rtl: modal.type === 'manga', color: modal.color };
   if (!modal.edit) body.path = $('#libPath').value.trim() || slug(name);
+  if (modal.edit && $('#libAuto') && !$('#libAuto').disabled) body.autoOptimize = $('#libAuto').value;
   const btn = e.target.querySelector('[type=submit]'); btn.disabled = true;
   const r = await fetch(modal.edit ? `/api/libraries/${modal.edit.id}` : '/api/libraries', {
     method: modal.edit ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -2069,6 +2122,7 @@ $('#libForm').addEventListener('submit', async e => {
   $('#libModal').classList.remove('open'); modal = null;
   if (!wasEdit) location.hash = `#/library/${d.id}`;
   await load();
+  pollJobs();                                         // (auto-optimize may just have been switched on)
   if (pending?.length) uploadFiles(d.id, pending);
 });
 /* ======================= EDIT DETAILS (series / set metadata) ======================= */
@@ -2853,6 +2907,7 @@ function renderLibraryMenu() {
   const m = $('#menu');
   m.innerHTML = `<div class="mhead"><b>${esc(l.name)}</b><small>${esc(plural(l.series || 0, V(l.id).s))} · ${esc(plural(l.books || 0, 'file'))}</small></div>
     <button data-libmenu="newcol">${ico('plus', 17)} New ${esc(V(l.id).g)}…</button>
+    ${l.books ? `<button data-libmenu="optimize">${ico('spark', 17)} Optimize library…</button>` : ''}
     <button data-libmenu="settings">${ico('sliders', 17)} Library settings</button>`;
   m.classList.add('on'); $('#menuShade').classList.add('on'); placeMenu();
 }
@@ -2862,6 +2917,7 @@ document.addEventListener('click', e => {
   const l = S.libById[M.id], anchor = M.anchor;
   if (l && b.dataset.libmenu === 'newcol') return newCollection(anchor, l.id);
   closeMenu();
+  if (l && b.dataset.libmenu === 'optimize') return optimizeLibrary(l.id);
   if (l) openLibModal(l);
 }, true);
 function openSeriesBatchMenu(ids, anchor, view = 'main') {
@@ -3713,6 +3769,7 @@ async function pollJobs() {
   if (changed) load();
   renderJobs();
   if (d.jobs.some(j => j.state === 'queued' || j.state === 'running')) OPT.pollT = setTimeout(pollJobs, 1500);
+  else if (S.libraries.some(l => l.autoOptimize)) OPT.pollT = setTimeout(pollJobs, 15000);   // new uploads start jobs by themselves
 }
 function jobLine(j) {
   const n = j.books.length, fin = j.done.length + j.skipped.length + j.failed.length;

@@ -929,3 +929,13 @@ body.booting .app{visibility:hidden}
 #jobs .jacts{grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end}
 #jobs .up-row.done .bar i{background:var(--mint)}
 @media (max-width:860px){#jobs,#jobs.min{left:12px;right:12px;width:auto}}
+/* library settings: optimize row · reader: "optimize this HEIC / JPEG XL" hint */
+.libstore .storerow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 6px}
+.libstore .storerow label{font-size:13px;font-weight:700;color:#cfcad8;margin-left:auto}
+.libstore select{height:34px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 8px;font-weight:600;max-width:220px}
+.libstore .btn-sm{display:inline-flex;align-items:center;gap:6px}
+#avifHint{position:absolute;left:50%;bottom:84px;z-index:8;transform:translateX(-50%);display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+  width:max-content;max-width:min(720px,92vw);padding:12px 14px;border-radius:14px;background:rgba(22,21,29,.96);border:1px solid #36333f;box-shadow:0 20px 50px -15px rgba(0,0,0,.8);font-size:13px;color:#d9d5e2;animation:popIn .25s var(--ease)}
+#avifHint span{flex:1 1 260px;line-height:1.45}#avifHint b{color:var(--text)}
+#avifHint .btn-sm{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+body.reading #jobs{display:none}

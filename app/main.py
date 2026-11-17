@@ -697,6 +697,11 @@ def _selected(body: dict) -> list[dict]:
         own_series(sid)
         for b in sorted(lib.series_books(sid), key=lambda b: (b.get("number") is None, b.get("number") or 0, b["file"])):
             add(b)
+    for lid in body.get("libraries") or []:
+        own_lib(lid)
+        for b in sorted((b for b in lib.books.values() if b["library"] == lid and not (lib.trash.get(b["id"]) or {}).get("at")),
+                        key=lambda b: b["rel"]):
+            add(b)
     for cid in body.get("collections") or []:
         own_collection(cid)
         try:
@@ -708,6 +713,25 @@ def _selected(body: dict) -> list[dict]:
             add(b)
     if not out:
         raise HTTPException(400, "Nothing selected")
+    return out
+
+
+@app.get("/api/libraries/{lid}/storage")
+def library_storage(lid: str):
+    """How big the library is and how much of it ✨ Optimize could still convert."""
+    own_lib(lid)
+    books = [b for b in lib.books.values() if b["library"] == lid]
+    out = {"books": len(books), "bytes": 0, "optimized": 0, "saved": 0, "convertible": 0, "convertibleBytes": 0}
+    for b in books:
+        size = opt.size(b)
+        out["bytes"] += size
+        k = opt.kept.get(b["id"])
+        if k:
+            out["optimized"] += 1
+            out["saved"] += max(0, (k.get("before") or 0) - (k.get("after") or 0))
+        elif not opt.why_not(b):
+            out["convertible"] += 1
+            out["convertibleBytes"] += size
     return out
 
 

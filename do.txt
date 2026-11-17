@@ -144,7 +144,8 @@ Safety, whichever engine
             + AVIF pill.                                                         ✔ built
             (left for later: the "Advanced" section of Design 3, lossless AVIF, .cb7 sets)
    Phase 2: library-level "Optimize all" and auto-optimize new uploads, plus the "HEIC/JXL -> AVIF"
-            suggestion in the reader.
+            suggestion in the reader.                                            ✔ built
+            (auto-optimize runs after the upload, as its own "New in <library>" job; no pills on cards)
    Phase 3: the ✨ Storage page and night-only scheduling.
 
 
