@@ -146,7 +146,7 @@ Safety, whichever engine
    Phase 2: library-level "Optimize all" and auto-optimize new uploads, plus the "HEIC/JXL -> AVIF"
             suggestion in the reader.                                            ✔ built
             (auto-optimize runs after the upload, as its own "New in <library>" job; no pills on cards)
-   Phase 3: the ✨ Storage page and night-only scheduling.
+   Phase 3: the ✨ Storage page and night-only scheduling.                         ✔ built
 
 
 DECISIONS TO MAKE  (what Phase 1 does for now — change any of these)

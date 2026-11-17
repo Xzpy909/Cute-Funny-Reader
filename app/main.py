@@ -823,6 +823,25 @@ def optimize_undo(body: dict = Body(...)):
     return {"restored": len(books)}
 
 
+@app.get("/api/storage")
+def storage():
+    return opt.storage(me()["id"])
+
+
+@app.put("/api/optimize/schedule")
+def optimize_schedule(body: dict = Body(...)):
+    me()
+    try:
+        return opt.set_schedule(body.get("on"), body.get("from", 1), body.get("to", 7), body.get("tz") or "", body.get("offset") or 0)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/optimize/originals/clear")
+def optimize_originals_clear():
+    return {"deleted": opt.drop_originals(me()["id"])}
+
+
 @app.get("/api/jobs")
 def jobs_list():
     return {"jobs": opt.list(me()["id"])}
@@ -830,7 +849,7 @@ def jobs_list():
 
 @app.post("/api/jobs/{jid}/{action}")
 def jobs_control(jid: str, action: str):
-    if action not in ("pause", "resume", "cancel", "dismiss"):
+    if action not in ("pause", "resume", "cancel", "dismiss", "now"):
         raise HTTPException(400, "Unknown action")
     try:
         opt.control(me()["id"], jid, action)

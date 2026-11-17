@@ -111,6 +111,7 @@ class Optimizer:
         self.jobs = Store(lib.db, "optimize_jobs")         # job id → job
         self.kept = Store(lib.db, "optimized")             # book id → what was done, and where the original is
         self.seen = Store(lib.db, "optimize_seen")         # book id → looked at by auto-optimize (once is enough)
+        self.settings = Store(lib.db, "optimize_settings")  # "schedule" → night-only hours
         self.cv = threading.Condition()
         self.live: dict[str, dict] = {}                    # job id → progress of the book being converted
         self._ratio_cache: dict = {}
@@ -474,6 +475,75 @@ class Optimizer:
             self.cv.notify_all()
         return job
 
+    # ---- night-only: jobs wait outside the chosen hours (unless started with "Run now")
+    def schedule(self) -> dict:
+        return {"on": False, "from": 1, "to": 7, "tz": "", "offset": 0, **(self.settings.get("schedule") or {})}
+
+    def set_schedule(self, on, start, end, tz: str = "", offset: int = 0) -> dict:
+        start, end = int(start), int(end)
+        if not (0 <= start <= 23 and 0 <= end <= 23) or start == end:
+            raise ValueError("Pick two different hours between 0 and 23")
+        sch = {"on": bool(on), "from": start, "to": end, "tz": str(tz or "")[:60], "offset": int(offset or 0)}
+        self.settings.put("schedule", sch)
+        with self.cv:
+            self.cv.notify_all()
+        return sch
+
+    def allowed(self, now: float | None = None) -> bool:
+        sch = self.schedule()
+        if not sch["on"]:
+            return True
+        now = now or time.time()
+        try:                                               # the hours are meant in the owner's time zone
+            from zoneinfo import ZoneInfo
+            import datetime as _dt
+            hour = _dt.datetime.fromtimestamp(now, ZoneInfo(sch["tz"])).hour
+        except Exception:  # noqa: BLE001 — no zone data in the container: the offset the browser reported
+            hour = int(((now + sch["offset"] * 60) % 86400) // 3600)
+        a, b = sch["from"], sch["to"]
+        return a <= hour < b if a < b else (hour >= a or hour < b)
+
+    # ---- the Storage page
+    def storage(self, owner: str) -> dict:
+        libs, series = [], {}
+        for l in self.lib.libraries:
+            if l.get("owner") != owner:
+                continue
+            row = {"id": l["id"], "books": 0, "bytes": 0, "optimized": 0, "saved": 0, "convertible": 0, "convertibleBytes": 0}
+            for b in self.lib.books.values():
+                if b["library"] != l["id"]:
+                    continue
+                size = self.size(b)
+                row["books"] += 1; row["bytes"] += size
+                k = self.kept.get(b["id"])
+                if k:
+                    row["optimized"] += 1
+                    row["saved"] += max(0, (k.get("before") or 0) - (k.get("after") or 0))
+                elif not self.why_not(b):
+                    row["convertible"] += 1; row["convertibleBytes"] += size
+                    s = series.setdefault(b["seriesId"], {"id": b["seriesId"], "bytes": 0, "books": 0})
+                    s["bytes"] += size; s["books"] += 1
+            libs.append(row)
+        mine = {l["id"] for l in libs}
+        kept = [(bid, k) for bid, k in self.kept.all().items()
+                if k.get("backup") and (self.lib.get(bid) or {}).get("library") in mine and (L.CONFIG_DIR / k["backup"]).exists()]
+        return {"libraries": libs, "biggest": sorted(series.values(), key=lambda s: -s["bytes"])[:20],
+                "kept": {"books": len(kept), "bytes": sum(k.get("before") or 0 for _, k in kept), "days": KEEP_DAYS},
+                "schedule": self.schedule(), "allowed": self.allowed()}
+
+    def drop_originals(self, owner: str) -> int:
+        """Delete the kept originals of this account's books now (the conversions stay; Undo is gone)."""
+        mine = {l["id"] for l in self.lib.libraries if l.get("owner") == owner}
+        n = 0
+        for bid, k in self.kept.all().items():
+            if not k.get("backup") or (self.lib.get(bid) or {}).get("library") not in mine:
+                continue
+            p = L.CONFIG_DIR / k["backup"]
+            shutil.rmtree(p.parent if k["kind"] == "archive" else p, ignore_errors=True)
+            self.kept.put(bid, {**k, "backup": None})
+            n += 1
+        return n
+
     # ---- auto-optimize: libraries with a preset chosen convert whatever is added from then on
     def collect_auto(self, now: float | None = None) -> int:
         """Queue new books of libraries that have auto-optimize on. Each book is queued once (also when it
@@ -519,6 +589,7 @@ class Optimizer:
                 continue
             live = self.live.get(j["id"]) or {}
             out.append({**{k: v for k, v in j.items() if k != "owner"}, "current": live or None,
+                        "waiting": j["state"] in ("queued", "running") and not live and not j.get("now") and not self.allowed(),
                         "pagesDone": j["pagesDone"] + live.get("done", 0)})
         return out
 
@@ -532,6 +603,8 @@ class Optimizer:
             j["state"] = "queued"
         elif action == "cancel" and j["state"] in ("queued", "running", "paused"):
             j["state"] = "cancelled"; j["finished"] = time.time()
+        elif action == "now" and j["state"] in ("queued", "running"):
+            j["now"] = True                                # ignore the night-only hours for this job
         elif action == "dismiss" and j["state"] in ("done", "cancelled"):
             self.jobs.delete(jid)
             return
@@ -543,7 +616,8 @@ class Optimizer:
 
     def _next(self):
         jobs = sorted(self.jobs.all().values(), key=lambda j: j["created"])
-        return next((j for j in jobs if j["state"] in ("queued", "running")), None)
+        ok = self.allowed()
+        return next((j for j in jobs if j["state"] in ("queued", "running") and (ok or j.get("now"))), None)
 
     def step(self) -> bool:
         """Run one book of the oldest waiting job. False when there's nothing to do."""

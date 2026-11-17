@@ -244,3 +244,46 @@ def test_heic_and_jxl_books_convert_too(lib):
     Optimizer(lib).convert(b, {**P, "quality": 40}, keep=True, max_edge=0)
     nb = lib.get(b["id"])
     assert nb["entries"] == ["001.avif", "002.avif"] and not L.needs_transcode(nb)   # opens without waiting now
+
+
+def test_night_only_hours_and_run_now(lib):
+    b = _book(lib, {"001.jpg": photo()})
+    o = Optimizer(lib)
+    assert o.allowed()
+    o.set_schedule(True, 1, 7, "Etc/UTC", 0)
+    at = lambda h: 1_800_000_000 - 1_800_000_000 % 86400 + h * 3600 + 60
+    assert o.allowed(at(1)) and o.allowed(at(6)) and not o.allowed(at(7)) and not o.allowed(at(0))
+    o.set_schedule(True, 22, 6, "Etc/UTC", 0)                         # over midnight
+    assert o.allowed(at(23)) and o.allowed(at(3)) and not o.allowed(at(12))
+    o.set_schedule(True, 1, 7, "No/Such_Zone", 120)                   # no zone data: the browser's offset
+    assert o.allowed(at(0)) and not o.allowed(at(6))                  # 00:01 UTC is 02:01 there
+    with pytest.raises(ValueError):
+        o.set_schedule(True, 5, 5)
+    hour = time.gmtime().tm_hour
+    o.set_schedule(True, (hour + 2) % 24, (hour + 3) % 24, "Etc/UTC", 0)   # not now
+    j = o.start("me", [b], "default", keep=True, max_edge=0, title="x")
+    assert not o.step() and o.list("me")[0]["waiting"]
+    o.control("me", j["id"], "now")
+    assert o.step() and not o.list("me")[0]["waiting"]
+
+
+def test_storage_numbers_and_dropping_originals(lib):
+    l = lib.create_library("Lib", "Lib", False, "#fff", "comics")
+    lib.get_library(l["id"])["owner"] = "me"
+    root = L.LIB_ROOT / l["path"]
+    make_cbz(root / "Starfall" / "Starfall 01.cbz", {"001.jpg": photo(seed=1), "002.jpg": photo(seed=2)})
+    make_cbz(root / "Moonforge" / "Moonforge 01.cbz", {"001.jpg": photo(seed=3)})
+    lib.scan()
+    o = Optimizer(lib)
+    st = o.storage("me")
+    assert st["libraries"][0]["convertible"] == 2 and [s["books"] for s in st["biggest"]] == [1, 1]
+    big = lib.get_series_books(st["biggest"][0]["id"]) if hasattr(lib, "get_series_books") else lib.series_books(st["biggest"][0]["id"])
+    assert big[0]["series"] == "Starfall"                              # the biggest first
+    o.convert(big[0], P, keep=True, max_edge=0)
+    st = o.storage("me")
+    row = st["libraries"][0]
+    assert row["optimized"] == 1 and row["saved"] > 0 and row["convertible"] == 1 and st["kept"]["books"] == 1
+    assert o.storage("someone-else")["libraries"] == []
+    assert o.drop_originals("me") == 1
+    assert o.storage("me")["kept"]["books"] == 0 and not o.can_undo(big[0]["id"])
+    assert lib.get(big[0]["id"])["entries"] == ["001.avif", "002.avif"]   # the conversion stays

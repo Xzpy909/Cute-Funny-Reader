@@ -939,3 +939,23 @@ body.booting .app{visibility:hidden}
 #avifHint span{flex:1 1 260px;line-height:1.45}#avifHint b{color:var(--text)}
 #avifHint .btn-sm{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 body.reading #jobs{display:none}
+/* ✨ Storage page */
+#viewStorage .shelf-h.slim{margin-top:34px}
+.stlibs{display:grid;gap:10px}
+.stlib{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;align-items:center;padding:14px 16px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.025)}
+.stname{display:flex;align-items:baseline;gap:9px;min-width:0}.stname i{width:9px;height:9px;border-radius:50%;flex:none;align-self:center}
+.stname b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stname small{font:400 12px var(--mono);color:var(--mute);white-space:nowrap}
+.stlib .btn-sm{grid-row:1/span 3;grid-column:2;display:inline-flex;align-items:center;gap:6px}
+.stbar{grid-column:1;height:8px;border-radius:99px;background:var(--mint);overflow:hidden;min-width:40px}
+.stbar .todo{display:block;height:100%;margin-left:auto;background:#3a3744}
+.stmeta{grid-column:1;font-size:12.5px;color:var(--mute)}
+.stbig{display:grid;gap:2px}
+.strow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:14px;align-items:center;padding:8px 10px;border-radius:10px}
+.strow:hover{background:rgba(255,255,255,.035)}
+.strow .stopen{text-align:left;font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.strow .stopen:hover{text-decoration:underline}
+.strow small{font-size:12px;color:var(--mute);white-space:nowrap}.strow b{font:600 13px var(--mono);white-space:nowrap}
+.stbox{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;padding:14px 16px;border-radius:14px;border:1px solid var(--line);font-size:13.5px;color:#cfcad8}
+.stbox>span:first-child{flex:1 1 300px}
+.stbox select{height:32px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 6px;font:600 13px var(--mono)}
+.stbox .btn-sm.danger{background:#c21f3d;border-color:#c21f3d;color:#fff}
+@media (max-width:700px){.strow{grid-template-columns:minmax(0,1fr) auto auto}.strow small{display:none}}

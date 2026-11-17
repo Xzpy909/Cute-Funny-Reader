@@ -617,6 +617,36 @@ def test_library_optimize_auto_setting_and_reader_hint(heic_server, browser):
         pg.wait_for_function("Object.values(S.books).every(b => b.optimized && !b.transcode)", timeout=15000)
 
 
+def test_storage_page(heic_server, browser):
+    for pg in open_page(heic_server, browser):
+        pg.click(".side [data-nav=storage]")
+        pg.wait_for_selector("#viewStorage.on .stlib")
+        assert pg.evaluate("document.querySelector('.side [data-nav=storage]').classList.contains('on')")
+        assert "Phone" in pg.inner_text("#viewStorage .stlibs")
+        pg.select_option("#stFrom", "2")                                       # night-only hours
+        pg.wait_for_function("S.storage.schedule.from === 2")
+        hour = pg.evaluate("new Date().getHours()")
+        a, b = (hour + 2) % 24, (hour + 3) % 24                              # hours that don't include now
+        steps = [("#stTo", "to", b), ("#stFrom", "from", a)]                   # (from = to is refused: mind the order)
+        for sel, key, v in (steps if b != 2 else steps[::-1]):
+            pg.select_option(sel, str(v)); pg.wait_for_function(f"S.storage.schedule.{key} === {v}")
+        pg.check("#stNight")
+        pg.wait_for_function("S.storage.schedule.on && !S.storage.allowed")
+        assert "wait" in pg.inner_text("#stNote")
+        if pg.locator("#viewStorage [data-stlib]:not([disabled])").count():   # (an earlier test may have converted it all)
+            pg.click("#viewStorage [data-stlib]")
+            pg.wait_for_selector("#optModal.open .optrow")
+            pg.click("#optModal [data-opt=start]")
+            pg.wait_for_selector("#jobs [data-jact=now]")                      # outside the hours: it waits
+            assert "night hours" in pg.inner_text("#jobs")
+            pg.click("#jobs [data-jact=now]")
+            pg.wait_for_function("OPT.jobs.length && OPT.jobs[0].state === 'done'", timeout=30000)
+        pg.uncheck("#stNight")
+        pg.wait_for_function("!S.storage.schedule.on")
+        pg.click(".side [data-nav=home]")
+        pg.wait_for_selector("#viewHome.on"); assert not pg.is_visible("#viewStorage")
+
+
 def test_zz_nothing_went_missing(home_page):
     names = home_page.evaluate("S.series.map(s => s.name + ':' + s.books.length + (seriesTrashed(s) ? ':trashed' : '')).sort()")
     assert names == ["Beach:1", "Maid:1", "Starfall:2", "Test Novel:2"], names

@@ -610,7 +610,7 @@ function renderSidebar() {
   $('#nFavs').textContent = S.favs.reduce((n, f) => n + favItems(f).length, 0) || '';
   $('#libNav').innerHTML = S.libraries.map(l =>
     `<button data-lib="${l.id}" class="${S.lib === l.id ? 'on' : ''}"><span class="dot" style="background:${esc(l.color)}"></span>${esc(l.name)} <span class="count">${l.series || ''}</span></button>`).join('');
-  $$('#mainNav button').forEach(b => b.classList.toggle('on', S.inFavs ? b.dataset.nav === 'favs' : !S.lib && b.dataset.nav === (S.filter === 'all' ? 'home' : S.filter)));
+  $$('#mainNav button').forEach(b => b.classList.toggle('on', S.inStorage ? b.dataset.nav === 'storage' : S.inFavs ? b.dataset.nav === 'favs' : !S.lib && b.dataset.nav === (S.filter === 'all' ? 'home' : S.filter)));
   renderServer();
 }
 function renderServer() {
@@ -1165,6 +1165,8 @@ function route() {
   }
   if (document.body.classList.contains('reading')) shutReader();
   S.inFavs = false; S.favCur = null; $('#viewFavs').classList.remove('on');
+  S.inStorage = false; $('#viewStorage').classList.remove('on');
+  if (view === 'storage') { renderStorage(); renderSidebar(); return; }
   if (view === 'favs' || view === 'fav') { renderFavs(view === 'fav' ? id : null); renderSidebar(); return; }
   if (view !== 'collection') S.col = null;
   if (view === 'series') renderSeries(id);
@@ -1743,6 +1745,7 @@ document.addEventListener('click', e => {
   if (f) { S.filter = f.dataset.filter; renderHome(); renderSidebar(); return; }
   const nav = t.closest('[data-nav]');
   if (nav?.dataset.nav === 'favs') { location.hash = '#/favs'; return; }
+  if (nav?.dataset.nav === 'storage') { location.hash = '#/storage'; return; }
   const fl = t.closest('[data-favlist]');
   if (fl) { location.hash = `#/fav/${fl.dataset.favlist}`; return; }
   if (t.closest('[data-favback]')) { location.hash = '#/favs'; return; }
@@ -3768,7 +3771,9 @@ async function pollJobs() {
   }
   if (changed) load();
   renderJobs();
-  if (d.jobs.some(j => j.state === 'queued' || j.state === 'running')) OPT.pollT = setTimeout(pollJobs, 1500);
+  if (changed && S.inStorage) renderStorage();
+  if (d.jobs.some(j => (j.state === 'queued' || j.state === 'running') && !j.waiting)) OPT.pollT = setTimeout(pollJobs, 1500);
+  else if (d.jobs.some(j => j.waiting)) OPT.pollT = setTimeout(pollJobs, 30000);
   else if (S.libraries.some(l => l.autoOptimize)) OPT.pollT = setTimeout(pollJobs, 15000);   // new uploads start jobs by themselves
 }
 function jobLine(j) {
@@ -3778,6 +3783,7 @@ function jobLine(j) {
   if (j.state === 'done') return `Done${saved}${extra ? ' · ' + extra : ''}`;
   if (j.state === 'cancelled') return `Cancelled after ${fin} of ${n}${saved}`;
   if (j.state === 'paused') return `Paused · ${fin} of ${n}${saved}`;
+  if (j.waiting) return `Waits for the night hours · ${fin} of ${n}${saved}`;
   if (j.state === 'queued' && !fin) return 'Waiting…';
   return `${Math.min(fin + 1, n)} of ${n}${j.current ? ` · ${j.current.label}` : ''}${saved}${extra ? ' · ' + extra : ''}`;
 }
@@ -3804,7 +3810,7 @@ function renderJobs() {
         <span class="s">${j.state === 'running' || j.state === 'queued' ? `${p}%` : ''}</span>
         <div class="bar"><i style="width:${j.state === 'done' ? 100 : p}%"></i></div>
         <div class="jmeta" ${fails ? `title="${esc(fails)}"` : ''}>${esc(jobLine(j))}</div>
-        <div class="jacts">${live ? '<button class="btn-sm" data-jact="pause">Pause</button>' : j.state === 'paused' ? '<button class="btn-sm" data-jact="resume">Resume</button>' : ''}
+        <div class="jacts">${j.waiting ? '<button class="btn-sm" data-jact="now">Run now</button>' : ''}${live ? '<button class="btn-sm" data-jact="pause">Pause</button>' : j.state === 'paused' ? '<button class="btn-sm" data-jact="resume">Resume</button>' : ''}
           ${live || j.state === 'paused' ? '<button class="btn-sm" data-jact="cancel">Cancel</button>' : '<button class="btn-sm" data-jact="dismiss">Dismiss</button>'}</div></div>`;
     }).join('')}</div>`;
   placeJobs();
@@ -3967,4 +3973,77 @@ function cmpClick(e) {
     const r = $(`#optModal input[name=optPreset][value="${CSS.escape(p.dataset.cpreset)}"]`); if (r) r.checked = true;
     cmpLoad();
   }
+}
+
+/* ======================= ✨ STORAGE ======================= */
+// How big each library is, what ✨ Optimize already saved and what it could still convert; the biggest
+// unconverted series; the kept originals; and the night-only hours for the optimizer.
+const hh = h => `${String(h).padStart(2, '0')}:00`;
+async function renderStorage() {
+  $('#viewHome').classList.remove('on'); $('#viewSeries').classList.remove('on'); $('#viewFavs').classList.remove('on');
+  const v = $('#viewStorage'); v.classList.add('on'); S.inStorage = true;
+  if (!v.dataset.ready) {
+    v.dataset.ready = 1;
+    v.innerHTML = '<div class="shelf-h"><div><h2>✨ Storage</h2><p class="sub">Measuring…</p></div></div>';
+    v.addEventListener('click', storageClick);
+    v.addEventListener('change', storageChange);
+  }
+  let st;
+  try { st = await api.get('/api/storage'); } catch { v.querySelector('.sub').textContent = 'Couldn’t measure the libraries.'; return; }
+  if (!S.inStorage) return;
+  S.storage = st;
+  const total = st.libraries.reduce((n, l) => n + l.bytes, 0), saved = st.libraries.reduce((n, l) => n + l.saved, 0);
+  const left = st.libraries.reduce((n, l) => n + l.convertibleBytes, 0), max = Math.max(1, ...st.libraries.map(l => l.bytes));
+  const sch = st.schedule, hours = sel => Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === sel ? 'selected' : ''}>${hh(h)}</option>`).join('');
+  const big = st.biggest.map(x => ({ ...x, s: S.seriesById[x.id] })).filter(x => x.s);
+  v.innerHTML = `<div class="shelf-h"><div><h2>✨ Storage</h2>
+      <p class="sub">${fmtBytes(total)} in ${plural(st.libraries.length, 'library').replace('librarys', 'libraries')}${saved ? ` · ${fmtBytes(saved)} saved so far` : ''}${left ? ` · ${fmtBytes(left)} not optimized yet` : ''}</p></div></div>
+    <div class="stlibs">${st.libraries.map(r => { const l = S.libById[r.id]; if (!l) return ''; return `<div class="stlib">
+        <div class="stname"><i style="background:${esc(l.color)}"></i><b>${esc(l.name)}</b><small>${plural(r.books, 'file')} · ${fmtBytes(r.bytes)}</small></div>
+        <div class="stbar" style="width:${Math.max(6, r.bytes / max * 100)}%" role="img" aria-label="${fmtBytes(r.convertibleBytes)} of ${fmtBytes(r.bytes)} could still be converted">
+          <i class="todo" style="width:${r.bytes ? r.convertibleBytes / r.bytes * 100 : 0}%"></i></div>
+        <div class="stmeta">${r.optimized ? `${plural(r.optimized, 'file')} optimized${r.saved ? ` · saved ${fmtBytes(r.saved)}` : ''} · ` : ''}${r.convertible ? `${fmtBytes(r.convertibleBytes)} in ${plural(r.convertible, 'file')} could still be converted` : 'nothing left to convert'}</div>
+        <button type="button" class="btn-sm" data-stlib="${r.id}" ${r.convertible ? '' : 'disabled'}>${ico('spark', 15)} Optimize…</button></div>`; }).join('') || '<p class="hintline">No libraries yet.</p>'}</div>
+    <div class="shelf-h slim"><div><h2>Biggest, not optimized yet</h2></div>
+      <div class="shelf-actions">${big.length > 1 ? `<button type="button" class="btn-sm pri" data-stall>${ico('spark', 15)} Optimize the ${big.length} biggest…</button>` : ''}</div></div>
+    <div class="stbig">${big.map(x => `<div class="strow"><button type="button" class="stopen" data-series="${x.id}">${esc(x.s.name)}</button>
+        <small>${esc(libName(x.s.library))} · ${plural(x.books, V(x.s.library).b)}</small><b>${fmtBytes(x.bytes)}</b>
+        <button type="button" class="btn-sm" data-stseries="${x.id}">Optimize…</button></div>`).join('') || '<p class="hintline">Everything that can be converted already is.</p>'}</div>
+    <div class="shelf-h slim"><div><h2>Kept originals</h2></div></div>
+    <div class="stbox">${st.kept.books
+      ? `<span>${plural(st.kept.books, 'original')} kept for Undo · about ${fmtBytes(st.kept.bytes)} in the config folder · each is deleted ${plural(st.kept.days, 'day')} after its conversion.</span>
+         <button type="button" class="btn-sm" data-stdrop>Delete them now</button>`
+      : `<span>None. Originals are kept for ${plural(st.kept.days, 'day')} after a conversion, so it can be undone.</span>`}</div>
+    <div class="shelf-h slim"><div><h2>When to optimize</h2></div></div>
+    <div class="stbox"><label class="optchk"><input type="checkbox" id="stNight" ${sch.on ? 'checked' : ''}> Only between
+        <select id="stFrom" aria-label="From">${hours(sch.from)}</select> and <select id="stTo" aria-label="Until">${hours(sch.to)}</select></label>
+      <span class="hintline" id="stNote">${sch.on ? (st.allowed ? 'Inside the hours right now — jobs run.' : 'Outside the hours right now — jobs wait (each has a “Run now” button).') : 'Jobs run whenever they are started.'}</span></div>`;
+}
+function storageClick(e) {
+  const t = e.target;
+  const sl = t.closest('[data-stlib]'); if (sl) return optimizeLibrary(sl.dataset.stlib);
+  const ss = t.closest('[data-stseries]');
+  if (ss) { const s = S.seriesById[ss.dataset.stseries]; return s && openOptimize({ sel: { series: [s.id] }, books: s.books, title: s.name }); }
+  if (t.closest('[data-stall]')) {
+    const list = S.storage.biggest.map(x => S.seriesById[x.id]).filter(Boolean);
+    return openOptimize({ sel: { series: list.map(s => s.id) }, books: list.flatMap(s => s.books), title: `the ${list.length} biggest` });
+  }
+  const op = t.closest('.stopen'); if (op) { location.hash = `#/series/${op.dataset.series}`; return; }
+  const dr = t.closest('[data-stdrop]');
+  if (dr) {
+    if (!dr.classList.contains('armed')) {                         // can't be undone: a second click
+      dr.classList.add('armed', 'danger'); dr.textContent = 'Delete — Undo won’t be possible';
+      return setTimeout(() => { if (dr.isConnected) { dr.classList.remove('armed', 'danger'); dr.textContent = 'Delete them now'; } }, 4000);
+    }
+    dr.disabled = true;
+    jsonFetch('POST', '/api/optimize/originals/clear').then(r => { appToast(`${plural(r.deleted, 'original')} deleted`); return load(); }).then(renderStorage).catch(err => appToast(err.message));
+  }
+}
+async function storageChange(e) {
+  if (!['stNight', 'stFrom', 'stTo'].includes(e.target.id)) return;
+  try {
+    await jsonFetch('PUT', '/api/optimize/schedule', { on: $('#stNight').checked, from: +$('#stFrom').value, to: +$('#stTo').value,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '', offset: -new Date().getTimezoneOffset() });
+  } catch (err) { appToast(err.message); }
+  renderStorage(); pollJobs();
 }

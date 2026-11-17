@@ -123,6 +123,10 @@ which every current browser shows directly and which is usually much smaller tha
   left to convert).
 - **New uploads:** Library settings → *New uploads → AVIF · preset* converts whatever is added from then on by itself.
 - A HEIC / JPEG XL book offers **Optimize to AVIF** in the reader, so it no longer has to be transcoded to open.
+- **Storage** (sidebar): size per library, what was saved and what could still be converted, the biggest series
+  not optimized yet (**Optimize the 20 biggest…**), the kept originals (**Delete them now** frees their space; Undo
+  is gone then), and **When to optimize**: *Only between 01:00 and 07:00* makes jobs wait for those hours — each
+  waiting job has a **Run now** button.
 
 **Presets:** **Default** (quality 70, speed 6) is built in and can't be deleted — the baseline. Make your own with
 **+ New preset** in the dialog (name, quality 0–100, speed 0–10: lower is smaller but slower) and delete them with ×.
