@@ -21,8 +21,10 @@ const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
 // What things are called, per library type — the only place these words live.
 //   s: a group of books   b: one book   ch: what you page through   g: a folder of groups (🗂️)
 const VOCAB = {
-  comics:  { s: 'series',     b: 'book', ch: 'chapter', g: 'collection', G_BADGE: 'COLLECTION' },
-  cosplay: { s: 'set',        b: 'variant', ch: 'variant', g: 'cosplayer', G_BADGE: 'COSPLAYER' },   // circle → metadata
+  comics:  { s: 'series',     b: 'book', ch: 'chapter', g: 'collection', G_BADGE: 'COLLECTION',
+             author: 'Author', authorHint: 'Writer / artist', pub: 'Publisher / group', by: a => 'by ' + a, from: p => p },
+  cosplay: { s: 'set',        b: 'variant', ch: 'variant', g: 'cosplayer', G_BADGE: 'COSPLAYER',   // circle → metadata
+             author: 'Cosplayer', authorHint: 'Who is in the photos', pub: 'Photographer / publisher', by: a => a, from: p => '📷 ' + p },
 };
 const V = lid => VOCAB[lid && isCosplay(lid) ? 'cosplay' : 'comics'];
 // "all libraries" views: Cosplay words only when every library is a Cosplay one
@@ -667,7 +669,7 @@ function renderHome() {
         <h1 class="${s.name.length > 60 ? 'xl' : s.name.length > 32 ? 'l' : ''}">${escWrap(s.name)}</h1>
         <div class="hero-meta">${escWrap(hb.label)}${hb.title ? ' · ' + escWrap(hb.title) : ''} · ${progressText(hb)}</div>
         <div class="bar"><i style="width:${Math.round(bookFrac(hb) * 100)}%"></i></div>
-        <p class="blurb">${esc((s.summary || `${countLabel(s)} in your ${libName(s.library)} library${s.author ? ' · by ' + s.author : ''}.`).slice(0, 260))}</p>
+        <p class="blurb">${esc((s.summary || `${countLabel(s)} in your ${libName(s.library)} library${s.author ? ' · ' + V(s.library).by(s.author) : ''}.`).slice(0, 260))}</p>
         <div class="actions">
           <button class="btn-primary" data-open="${hb.id}">${ico('play')} ${started ? 'Resume' : 'Start reading'}</button>
           ${s.books.length > 1 ? `<button class="btn-ghost" data-series="${s.id}">${ico('book', 17)} Series</button>` : ''}
@@ -1023,7 +1025,7 @@ function renderSeries(sid) {
       <div class="hero-info">
         <div class="eyebrow">${eyebrow}</div>
         <h1 class="${s.name.length > 60 ? 'xl' : ''}">${escWrap(s.name)}</h1>
-        ${s.author || s.publisher ? `<div class="hero-meta">${[s.author && 'by ' + esc(s.author), s.publisher && esc(s.publisher)].filter(Boolean).join(' · ')}</div>` : ''}
+        ${s.author || s.publisher ? `<div class="hero-meta">${[s.author && V(s.library).by(esc(s.author)), s.publisher && V(s.library).from(esc(s.publisher))].filter(Boolean).join(' · ')}</div>` : ''}
         ${tagChips(s.genres, s.tags, 16)}
         ${s.summary ? `<p class="blurb">${esc(s.summary.slice(0, 420))}</p>` : ''}
         <div class="stats"><div><b>${s.books.length}</b>${unit}</div><div><b>${i.read}</b>finished</div><div><b>${Math.round(i.frac * 100)}%</b>complete</div></div>
@@ -2145,8 +2147,8 @@ function openDetails(sid) {
     <div class="dhead"><span class="dcover">${seriesCover(s, 160)}</span><div><h3>Edit details</h3><span class="hintline">${esc(libName(s.library))} · ${countLabel(s)}${edited ? ` · <b class="edtag" title="${unsaved ? 'Kept in the reader — not written into the files yet' : 'Kept in the reader (this kind of file can’t hold details)'}">edited</b>` : ''}</span>
       ${coverBooks(s).length ? '<button type="button" class="btn-sm editcover" data-editcover>🖼 Edit cover</button>' : ''}</div></div>
     <div class="f"><label for="dName">Name</label><input type="text" id="dName" maxlength="120" value="${esc(init.name)}"><span class="hintline">Renames the folder / file on disk · progress is kept</span></div>
-    <div class="f2"><div class="f"><label for="dAuthor">Author</label><input type="text" id="dAuthor" value="${esc(init.author)}" placeholder="Writer / artist"></div>
-      <div class="f"><label for="dPub">Publisher / group</label><input type="text" id="dPub" value="${esc(init.publisher)}" placeholder="—"></div></div>
+    <div class="f2"><div class="f"><label for="dAuthor">${V(s.library).author}</label><input type="text" id="dAuthor" value="${esc(init.author)}" placeholder="${V(s.library).authorHint}"></div>
+      <div class="f"><label for="dPub">${V(s.library).pub}</label><input type="text" id="dPub" value="${esc(init.publisher)}" placeholder="—"></div></div>
     <div class="f">Genres <span class="hintline">The first one is shown on the cover badge</span><div class="chipin" data-list="genres"></div></div>
     <div class="f">Tags <span class="hintline">Enter or comma adds · type <code>tag:f</code> / <code>tag:m</code> for tag ♀ / tag ♂</span><div class="chipin" data-list="tags"></div></div>
     <div class="f2"><div class="f"><label for="dRel">Release format</label><input type="text" id="dRel" value="${esc(init.release)}" placeholder="e.g. Web, Digital, Tankōbon"></div>
