@@ -557,14 +557,19 @@ def test_uploaded_folder_uses_its_metadata(page):
         { path: 'plain/001.jpg', file: img('001.jpg') } ];
       await readMeta(items);
       const jobs = planUploads(items, {});
-      const zip = await makeCbz(jobs[0].images, null, jobs[0].extras);
-      const text = new TextDecoder('latin1').decode(new Uint8Array(await zip.arrayBuffer()));
-      return { jobs: jobs.map(j => [j.name, j.folder, j.extras.map(f => f.name)]), inZip: text.includes('metadata.json') && text.includes('Starfall Side Story') };
+      const plan = jobs.map(j => [j.name, j.folder, j.extras.map(f => f.name)]);
+      // the folder is packed on the server: send it there for real and look at what came out
+      const libs = await (await fetch('/api/libraries')).json();
+      const lib = (libs.libraries || libs).find(l => l.name === 'Comics').id;
+      const row = { ...jobs[0], f: { size: 0 }, lib, state: 'queued', p: 0 };
+      await putFile(row);
+      return { plan, state: row.state, msg: row.msg, path: row.path };
     }""")
-    assert sorted(r["jobs"]) == sorted([["Starfall Side Story.cbz", "Starfall Side Story", ["metadata.json"]],
+    assert sorted(r["plan"]) == sorted([["Starfall Side Story.cbz", "Starfall Side Story", ["metadata.json"]],
                                         ["Moonforge 7.cbz", "Moonforge", ["ComicInfo.xml"]],
                                         ["plain.cbz", "plain", []]])
-    assert r["inZip"]
+    assert r["state"] == "ok", r["msg"]
+    assert r["path"].endswith("Starfall Side Story/Starfall Side Story.cbz")
 
 
 @pytest.fixture(scope="module")

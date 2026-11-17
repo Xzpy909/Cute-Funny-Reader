@@ -3,18 +3,23 @@ from __future__ import annotations
 
 import logging
 import os
+import posixpath
+import shutil
+import json
 import re
 import secrets
 import threading
 import time
 import uuid as _uuid
 import zipfile
+import zlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import ClientDisconnect
 
 import asyncio
 import contextvars
@@ -32,8 +37,10 @@ log = logging.getLogger("cfreader")
 
 lib = Library()
 from .optimize import Optimizer  # noqa: E402
+from .uploadlog import UploadLog, damage_detail  # noqa: E402
 opt = Optimizer(lib)
 accounts = Accounts(CONFIG_DIR)
+uplog = UploadLog(CONFIG_DIR / "logs")
 favs = Store(Db.at(CONFIG_DIR / "reader.db"), "favorites", CONFIG_DIR / "favorites.json")      # {account id: [list, …]} — references only, never files
 lib.accounts = accounts
 _user: contextvars.ContextVar[dict | None] = contextvars.ContextVar("user", default=None)
@@ -498,23 +505,192 @@ def free_name(dest: Path) -> Path:
     return dest
 
 
-def damaged_entry(path) -> str | None:
-    """Name of the first file inside a zip whose content doesn't match its checksum (None = all good).
+def damaged_entry(path) -> tuple[str, str] | None:
+    """(name, why) for the first file inside a zip that can't be read back as stored (None = all good).
     Every byte is read once — an upload that arrived damaged, or was damaged before, is caught here
     instead of when someone opens the book."""
     try:
         with zipfile.ZipFile(path) as z:
-            return z.testzip()
+            for i in z.infolist():
+                try:
+                    with z.open(i) as f:
+                        while f.read(1 << 20):
+                            pass
+                except zipfile.BadZipFile as e:
+                    if "CRC" in str(e):
+                        return i.filename, "fails its checksum (its bytes changed)"
+                    return i.filename, "can't be found where the archive's index says it is " \
+                                       "(the archive was written wrongly — e.g. a zip over 4 GB without ZIP64)"
+                except (EOFError, zlib.error) as e:
+                    return i.filename, f"can't be unpacked ({e or 'cut off'})"
     except zipfile.BadZipFile as e:
-        return str(e)
+        return "", str(e)
     except Exception:  # noqa: BLE001 — encrypted / unusual archives: not ours to judge
         return None
+    return None
+
+
+def damaged_message(bad: tuple[str, str]) -> str:
+    name, why = bad
+    what = f"“{Path(name).name}” inside {why}" if name else why
+    return f"This archive is damaged: {what}. Check the original file (try unpacking it) and upload it again."
 
 
 @app.put("/api/libraries/{lid}/files")
 async def upload(lid: str, name: str, request: Request, series: str | None = None,
-                 collection: str | None = None, folder: str | None = None):
+                 collection: str | None = None, folder: str | None = None, batch: str | None = None):
+    """Stores one file and notes how it went in the upload log (config/logs/)."""
+    return await _logged(lid, name, request, batch, _upload(lid, name, request, series, collection, folder),
+                         announced=int(request.headers.get("content-length") or 0))
+
+
+async def _logged(lid: str, name: str, request: Request, batch: str | None, work, announced: int = 0):
+    """Runs one upload (`work`) and writes its outcome to the upload log."""
+    request.state.received, request.state.detail, request.state.lib_name = 0, "", lid
+    note = dict(lib="", user="", name=name)
+    try:
+        note["user"] = me()["email"]
+    except HTTPException:
+        work.close()
+        raise                                      # not signed in: nothing to log
+    def done(state, why=""):
+        note["lib"] = request.state.lib_name
+        uplog.record(batch, state=state, why=why, detail=request.state.detail,
+                     sent=request.state.received, announced=announced, **note)
+    try:
+        out = await work
+    except HTTPException as e:
+        done("err", str(e.detail))
+        raise
+    except ClientDisconnect:
+        done("cancel")
+        raise
+    except Exception as e:  # noqa: BLE001
+        done("err", f"server error: {type(e).__name__}: {e}")
+        raise
+    done("skip" if out.get("skipped") else "ok")
+    return out
+
+
+@app.post("/api/uploads/{batch}/done")
+def upload_batch_done(batch: str, body: dict = Body(default={})):
+    """End of one drop: writes its entry to the upload log. The body carries what the server never saw."""
+    l = None
+    try:
+        l = own_lib(body.get("lib")) if body.get("lib") else None
+    except HTTPException:
+        pass
+    uplog.finish(batch, body, lib=(l or {}).get("name", ""), user=me()["email"])
+    return {"ok": True}
+
+
+# ---- Folders packed on the server -----------------------------------------------------------------------------
+# A dropped folder of photos becomes one .zip (Cosplay) / .cbz. The browser used to build that archive itself,
+# holding every photo in memory (a set with large videos needed gigabytes) — now it only sends the files:
+#   POST   /api/libraries/{lid}/packs            → {id}       a staging folder in /config/cache/packs/<id>
+#   PUT    /api/packs/{id}/files?name=001.jpg                one file at a time (already named in page order)
+#   POST   /api/packs/{id}/finish?name=…&series=…            packed (ZIP64 when needed) and stored like an upload
+#   DELETE /api/packs/{id}                                   cancelled
+# The staging folder is self-describing (pack.json), so a restart in between doesn't lose it; left-overs
+# older than a day are removed when the next pack starts.
+PACKS = CONFIG_DIR / "cache" / "packs"
+PACK_TTL = 86400
+PACK_ID = re.compile(r"^[a-f0-9]{16}$")
+PACK_META = {"metadata.json", "comicinfo.xml", "info.yaml", "info.yml"}
+
+
+def _pack_dir(pid: str) -> Path:
+    """The staging folder of one of *this account's* packs (404 otherwise)."""
+    d = PACKS / pid
+    try:
+        meta = json.loads((d / "pack.json").read_text("utf-8")) if PACK_ID.match(pid) else None
+    except (OSError, ValueError):
+        meta = None
+    if not meta or meta.get("owner") != me()["id"]:
+        raise HTTPException(404, "pack not found — it may have expired; drop the folder again")
+    return d
+
+
+def _sweep_packs():
+    try:
+        for d in PACKS.iterdir():
+            if d.stat().st_mtime < time.time() - PACK_TTL:
+                shutil.rmtree(d, ignore_errors=True)
+    except OSError:
+        pass
+
+
+@app.post("/api/libraries/{lid}/packs")
+def pack_start(lid: str):
+    own_lib(lid)
+    _sweep_packs()
+    pid = secrets.token_hex(8)
+    d = PACKS / pid
+    d.mkdir(parents=True)
+    (d / "pack.json").write_text(json.dumps({"owner": me()["id"], "lib": lid, "started": time.time()}), "utf-8")
+    return {"id": pid}
+
+
+@app.put("/api/packs/{pid}/files")
+async def pack_file(pid: str, name: str, request: Request):
+    d = _pack_dir(pid)
+    n = safe_component(posixpath.basename(name.replace("\\", "/")))
+    if not n or n == "pack.json" or not (n.lower().endswith(MEDIA_EXT) or n.lower() in PACK_META):
+        raise HTTPException(400, "Only pictures, videos and metadata files can go into a set")
+    tmp = d / f".{n}.part"
+    try:
+        with open(tmp, "wb") as f:
+            async for chunk in request.stream():
+                f.write(chunk)
+        os.replace(tmp, d / n)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {"ok": True}
+
+
+def _pack_files(d: Path) -> list[Path]:
+    return sorted((f for f in d.iterdir() if f.is_file() and f.name != "pack.json" and not f.name.startswith(".")),
+                  key=lambda f: (f.name.lower() in PACK_META, f.name.lower()))
+
+
+@app.post("/api/packs/{pid}/finish")
+async def pack_finish(pid: str, name: str, request: Request, series: str | None = None,
+                      collection: str | None = None, folder: str | None = None, batch: str | None = None):
+    d = _pack_dir(pid)
+    meta = json.loads((d / "pack.json").read_text("utf-8"))
+    files = _pack_files(d)
+    if not any(f.name.lower().endswith(MEDIA_EXT) for f in files):
+        shutil.rmtree(d, ignore_errors=True)
+        raise HTTPException(400, "Nothing arrived to pack — no pictures or videos")
+
+    async def fill(tmp: Path):
+        request.state.received = sum(f.stat().st_size for f in files)
+        def build():                                   # stored, not deflated: photos / videos don't shrink
+            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+                for f in files:
+                    z.write(f, f.name)
+        await asyncio.to_thread(build)
+
+    try:
+        return await _logged(meta["lib"], name, request, batch,
+                             _upload(meta["lib"], name, request, series, collection, folder, fill=fill))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+@app.delete("/api/packs/{pid}")
+def pack_cancel(pid: str):
+    shutil.rmtree(_pack_dir(pid), ignore_errors=True)
+    return {"ok": True}
+
+
+async def _upload(lid: str, name: str, request: Request, series: str | None,
+                  collection: str | None, folder: str | None, fill=None):
+    """Stores one uploaded file. `fill(tmp)` writes the bytes instead of the request body — used for
+    folders packed here on the server (their size is only known once packed; they are built from pictures
+    this server just checked, so the full re-read for damage is skipped)."""
     l = own_lib(lid)
+    request.state.lib_name = l.get("name") or lid
     own_series(series)   # `collection` is a folder NAME inside this (already owned) library, not a collection id
     try:
         col_dir = LIB_ROOT / l["path"] / safe_component(collection) if collection and safe_component(collection) else None
@@ -541,6 +717,7 @@ async def upload(lid: str, name: str, request: Request, series: str | None = Non
         twin = dest.with_suffix(".cbz" if dest.suffix.lower() == ".zip" else ".zip")
         if twin.exists() and size and twin.stat().st_size == size:   # the same set uploaded before as .cbz
             return {"skipped": True, "path": twin.relative_to(LIB_ROOT).as_posix()}
+    same_as = [dest] + ([twin] if cosplay and dest.suffix.lower() in (".zip", ".cbz") else [])  # a pack may repeat one
     if dest.exists():
         if size and dest.stat().st_size == size:
             return {"skipped": True, "path": dest.relative_to(LIB_ROOT).as_posix()}
@@ -550,9 +727,17 @@ async def upload(lid: str, name: str, request: Request, series: str | None = Non
     tmp = dest.with_name(f".{dest.name}.{_uuid.uuid4().hex[:8]}.part")
     taken_at_start = dest.exists()
     try:
-        with open(tmp, "wb") as f:
-            async for chunk in request.stream():
-                f.write(chunk)
+        if fill:
+            await fill(tmp)
+            n = tmp.stat().st_size
+            for o in same_as:                      # the same folder dropped before: already there
+                if o.exists() and o.stat().st_size == n:
+                    return {"skipped": True, "path": o.relative_to(LIB_ROOT).as_posix()}
+        else:
+            with open(tmp, "wb") as f:
+                async for chunk in request.stream():
+                    f.write(chunk)
+                    request.state.received += len(chunk)
         low = dest.name.lower()
         kind = REPACK_KIND.get(repack or "")
         if kind == "cb7":
@@ -568,10 +753,10 @@ async def upload(lid: str, name: str, request: Request, series: str | None = Non
             with zipfile.ZipFile(tmp) as z:
                 if not any(n.lower().endswith(MEDIA_EXT) and "__MACOSX" not in n for n in z.namelist()):
                     raise HTTPException(400, "There are no images or videos inside that .zip")
-            bad = await asyncio.to_thread(damaged_entry, tmp)
+            bad = None if fill else await asyncio.to_thread(damaged_entry, tmp)
             if bad:
-                raise HTTPException(400, f"This archive is damaged: “{Path(bad).name}” inside fails its checksum. "
-                                         "Check the original file (try unpacking it) and upload it again.")
+                request.state.detail = await asyncio.to_thread(damage_detail, tmp, bad[0])
+                raise HTTPException(400, damaged_message(bad))
             if not taken_at_start: dest = free_name(dest)      # a same-named upload finished meanwhile
             os.replace(tmp, dest)
             return {"skipped": False, "converted": not cosplay, "path": dest.relative_to(LIB_ROOT).as_posix()}
@@ -589,10 +774,10 @@ async def upload(lid: str, name: str, request: Request, series: str | None = Non
         elif not zipfile.is_zipfile(tmp):
             raise HTTPException(400, "That file isn't a valid .cbz / .epub archive")
         else:
-            bad = await asyncio.to_thread(damaged_entry, tmp)
+            bad = None if fill else await asyncio.to_thread(damaged_entry, tmp)
             if bad:
-                raise HTTPException(400, f"This archive is damaged: “{Path(bad).name}” inside fails its checksum. "
-                                         "Check the original file (try unpacking it) and upload it again.")
+                request.state.detail = await asyncio.to_thread(damage_detail, tmp, bad[0])
+                raise HTTPException(400, damaged_message(bad))
         if not taken_at_start: dest = free_name(dest)          # a same-named upload finished meanwhile
         os.replace(tmp, dest)
     finally:
