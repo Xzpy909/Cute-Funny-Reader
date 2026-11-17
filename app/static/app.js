@@ -2604,39 +2604,6 @@ function askDialog({ title, body, yes = 'Yes', no = 'No' }) {
   });
 }
 
-/* ---------- tiny ZIP writer (STORE) so image folders become .cbz in the browser ---------- */
-const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
-function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC_T[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
-async function makeCbz(images, onStep, extras = []) {
-  const enc = new TextEncoder(), parts = [], central = [];
-  let offset = 0;
-  const pad = String(images.length).length, all = [...images, ...extras];
-  for (let i = 0; i < all.length; i++) {
-    const f = all[i];
-    const data = new Uint8Array(await f.arrayBuffer());
-    const crc = crc32(data);
-    const ext = (f.name.match(/\.[^.]+$/) || ['.jpg'])[0].toLowerCase();
-    const name = enc.encode(i >= images.length ? f.name                            // metadata.json / ComicInfo.xml as they are
-      : String(i + 1).padStart(Math.max(3, pad), '0') + ext);                      // pages: stable reading order
-    const lh = new DataView(new ArrayBuffer(30));
-    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
-    lh.setUint16(12, 0x21, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true);
-    lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true);
-    const ch = new DataView(new ArrayBuffer(46));
-    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
-    ch.setUint16(14, 0x21, true); ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true);
-    ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
-    parts.push(lh, name, f); central.push(ch, name);
-    offset += 30 + name.length + data.length;
-    onStep?.(Math.min(i + 1, images.length), images.length);
-  }
-  const cdSize = central.reduce((n, p) => n + p.byteLength, 0);
-  const end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true); end.setUint16(8, all.length, true); end.setUint16(10, all.length, true);
-  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
-  return new Blob([...parts, ...central, end], { type: 'application/zip' });
-}
-
 async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   const items = input.map(x => x.file ? x : { file: x, path: x.webkitRelativePath || x.name });
   let usable = items.filter(it => BOOK_RE.test(it.file.name) || IMG_RE.test(it.file.name) || VIDEO_RE.test(it.file.name) || META_RE.test(it.file.name));
@@ -2681,7 +2648,8 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   } else jobs = planUploads(usable, { seriesId, colFolder });
   if (!jobs.length && (strayNote || plainNote)) { appToast('Nothing to add — you skipped everything in that drop'); return 0; }
   if (!jobs.length) { UP.rows.push({ f: { size: 0 }, name: `${plural(items.length, 'file')} skipped`, state: 'err', msg: 'No comics, images or videos', p: 1 }); return renderUploads(true); }
-  const batch = jobs.map(j => ({ ...j, f: j.f || { size: j.size }, lib: lid, state: 'queued', msg: j.packed ? `${j.images.length} images → ${j.name.slice(j.name.lastIndexOf('.'))}` : 'Waiting', p: 0,
+  const upBatch = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);   // groups this drop in the upload log
+  const batch = jobs.map(j => ({ ...j, f: j.f || { size: j.size }, lib: lid, batch: upBatch, state: 'queued', msg: j.packed ? `${j.images.length} images → ${j.name.slice(j.name.lastIndexOf('.'))}` : 'Waiting', p: 0,
     where: j.series ? '' : [j.collection && `🗂️ ${j.collection}`, j.folder].filter(Boolean).join(' / ') }));
   if (ignored) batch.push({ f: { size: 0 }, name: `${plural(ignored, 'other file')} ignored`, state: 'skip', msg: 'Not a comic', p: 1 });
   if (plainNote) batch.push({ f: { size: 0 }, name: `${plural(plainNote, 'archive')} skipped`, state: 'skip', msg: 'Your choice', p: 1 });
@@ -2690,6 +2658,7 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   const queue = batch.filter(r => r.state === 'queued');
   const worker = async () => { let r; while ((r = queue.shift())) if (r.state === 'queued') await putFile(r); };
   await Promise.all([worker(), worker()]);
+  logUploadBatch(upBatch, lid, batch, ignored, strayNote + plainNote);
   await api.post('/api/scan');
   setTimeout(load, 700); setTimeout(load, 2500);
   const added = batch.filter(r => r.state === 'ok').length;
@@ -2698,35 +2667,86 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   }
   return added;
 }
-async function putFile(r) {
-  if (r.packed && !(r.f instanceof Blob)) {
-    r.state = 'up'; r.msg = 'Packing…'; renderUploads();
-    try { r.f = await makeCbz(r.images, (i, n) => { if (r.cancel) throw new Error('cancelled'); r.msg = `Packing ${i}/${n}`; r.p = i / n * .3; renderUploads(); }, r.extras); }
-    catch (err) { if (r.cancel) return markCancelled(r); r.state = 'err'; r.p = 1; r.msg = 'Couldn’t read images'; renderUploads(); return; }
-    if (r.cancel) return markCancelled(r);
-    r.images = null;
+// one request; resolves with { status, data } (status 0 = no answer). r.xhr lets Cancel abort it.
+function xhrSend(r, method, url, body, onProgress) {
+  return new Promise(res => {
+    const x = new XMLHttpRequest();
+    r.xhr = x;
+    x.open(method, url);
+    if (onProgress) x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded); };
+    x.onload = () => { r.xhr = null; let d = {}; try { d = JSON.parse(x.responseText); } catch {} res({ status: x.status, data: d }); };
+    x.onerror = () => { r.xhr = null; res({ status: 0, data: {} }); };
+    x.onabort = () => { r.xhr = null; res({ status: -1, data: {} }); };
+    x.send(body);
+  });
+}
+function placeQuery(r) {
+  const q = new URLSearchParams({ name: r.name });
+  if (r.series) q.set('series', r.series);
+  if (r.collection) q.set('collection', r.collection);
+  if (r.folder) q.set('folder', r.folder);
+  if (r.batch) q.set('batch', r.batch);
+  return q;
+}
+function uploadDone(r, status, d) {
+  if (status > 0 && status < 300) { r.p = 1; r.path = d.path; r.state = d.skipped ? 'skip' : 'ok'; r.msg = d.skipped ? 'Already there' : d.converted ? `Converted to ${d.path.slice(d.path.lastIndexOf('.'))} ✓` : 'Added ✓'; }
+  else { r.state = 'err'; r.p = 1; r.msg = d.detail || (status ? `Error ${status}` : 'Network error'); r.serverSaw = status > 0; }
+  renderUploads();
+}
+// A folder of photos: the files go to the server one by one, straight into the .zip / .cbz it builds
+// (nothing big is held in the browser's memory — sets with videos run to gigabytes).
+async function putPack(r) {
+  const files = [...r.images, ...(r.extras || [])];
+  const pad = Math.max(3, String(r.images.length).length);
+  const total = files.reduce((n, f) => n + f.size, 0) || 1;
+  r.state = 'up'; r.msg = '0%'; renderUploads();
+  const start = await xhrSend(r, 'POST', `/api/libraries/${r.lib}/packs`);
+  if (r.cancel || start.status === -1) return markCancelled(r);
+  if (start.status !== 200) return uploadDone(r, start.status, start.data);
+  const pid = start.data.id;
+  const drop = () => fetch(`/api/packs/${pid}`, { method: 'DELETE' }).catch(() => {});
+  let sent = 0;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const ext = (f.name.match(/\.[^.]+$/) || ['.jpg'])[0].toLowerCase();
+    const name = i >= r.images.length ? f.name : String(i + 1).padStart(pad, '0') + ext;   // pages: stable reading order
+    const up = await xhrSend(r, 'PUT', `/api/packs/${pid}/files?${new URLSearchParams({ name })}`, f,
+      loaded => { r.p = .97 * (sent + loaded) / total; r.msg = `${Math.round(r.p / .97 * 100)}%`; renderUploads(); });
+    if (r.cancel || up.status === -1) { drop(); return markCancelled(r); }
+    if (up.status !== 200) { drop(); return uploadDone(r, up.status, up.data); }
+    sent += f.size;
   }
+  r.images = null; r.extras = null;
+  r.msg = 'Finishing…'; r.p = .97; renderUploads();
+  // past this point Cancel can't stop it (the set is being put in place): the row shows how it really ended
+  const fin = await xhrSend({}, 'POST', `/api/packs/${pid}/finish?${placeQuery(r)}`);
+  uploadDone(r, fin.status, fin.data);
+}
+async function putFile(r) {
+  if (r.packed) return putPack(r);
   return new Promise(res => {
     const x = new XMLHttpRequest();
     r.xhr = x;
     x.onabort = () => { r.xhr = null; markCancelled(r); res(); };
     r.state = 'up'; r.msg = '0%';
-    const q = new URLSearchParams({ name: r.name });
-    if (r.series) q.set('series', r.series);
-    if (r.collection) q.set('collection', r.collection);
-    if (r.folder) q.set('folder', r.folder);
-    x.open('PUT', `/api/libraries/${r.lib}/files?${q}`);
-    const base = r.packed ? .3 : 0;
-    x.upload.onprogress = e => { if (e.lengthComputable) { r.p = base + (1 - base) * e.loaded / e.total; r.msg = Math.round(e.loaded / e.total * 100) + '%'; renderUploads(); } };
+    x.open('PUT', `/api/libraries/${r.lib}/files?${placeQuery(r)}`);
+    x.upload.onprogress = e => { if (e.lengthComputable) { r.p = e.loaded / e.total; r.msg = Math.round(e.loaded / e.total * 100) + '%'; renderUploads(); } };
     x.onload = () => {
       let d = {}; try { d = JSON.parse(x.responseText); } catch {}
-      if (x.status < 300) { r.p = 1; r.state = d.skipped ? 'skip' : 'ok'; r.msg = d.skipped ? 'Already there' : d.converted ? `Converted to ${d.path.slice(d.path.lastIndexOf('.'))} ✓` : 'Added ✓'; }
-      else { r.state = 'err'; r.p = 1; r.msg = d.detail || `Error ${x.status}`; }
-      renderUploads(); res();
+      uploadDone(r, x.status, d); res();
     };
     x.onerror = () => { r.state = 'err'; r.p = 1; r.msg = 'Network error'; renderUploads(); res(); };
     x.send(r.f); renderUploads();
   });
+}
+// End of a drop → one entry in config/logs/uploads-….log. The server saw every file that reached it;
+// this adds what never did: files that failed in the browser (packing, network) and the cancelled ones.
+function logUploadBatch(id, lid, rows, ignored, skipped) {
+  const real = rows.filter(r => r.batch === id);
+  const failed = real.filter(r => r.state === 'err' && !r.serverSaw).map(r => ({ name: r.name, why: r.msg }));
+  const cancelled = real.filter(r => r.state === 'cancel').length;
+  fetch(`/api/uploads/${id}/done`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lib: lid, failed, cancelled, ignored, skipped }) }).catch(() => {});
 }
 function markCancelled(r) { r.state = 'cancel'; r.msg = 'Cancelled'; r.p = 1; r.images = null; renderUploads(); }
 // stop everything still waiting / packing / sending. Files that already finished stay in the library;
@@ -2735,7 +2755,7 @@ function cancelUploads() {
   let n = 0;
   for (const r of UP.rows) {
     if (r.state === 'queued') { markCancelled(r); n++; }
-    else if (r.state === 'up') { r.cancel = true; n++; if (r.xhr) r.xhr.abort(); }   // packing rows stop at the next image
+    else if (r.state === 'up') { r.cancel = true; n++; if (r.xhr) r.xhr.abort(); }   // (a set the server is already packing still finishes)
   }
   if (n) appToast(`Cancelled ${plural(n, 'upload')}`);
 }
