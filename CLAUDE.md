@@ -11,5 +11,8 @@ Applies to code, comments, tests, commit messages, README.md and every other fil
 - No real names from the owner's library or from real life: real titles (comics, manga, books, games, sets), authors, artists, circles, publishers, cosplayers or other real people.
   Use made-up names in tests, comments and examples ("Starfall", "Moonforge", "Mirelle"…), even when a bug was found on a real file.
 
+## File names
+- `docs/NAMING.md` is the naming baseline (Cosplay and manga). Parser changes must keep it working (`tests/test_naming_baseline.py`).
+
 ## Before pushing
 Read through the diff for anything above.
