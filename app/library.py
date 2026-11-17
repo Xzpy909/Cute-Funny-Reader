@@ -683,7 +683,8 @@ def credits_from_name(stem: str, numbered: bool) -> tuple[str, str]:
     inner = re.sub(r"\s+", " ", m.group(1)).strip()
     ca = CIRCLE_ARTIST.match(inner)
     circle, artist = (ca.group(1).strip(), ca.group(2).strip()) if ca else ("", inner)
-    if numbered and not ca:
+    dashed = re.match(r"\s*-\s", stem[m.end():]) is not None   # "[Author] - Series - Ch. 01" (docs/NAMING.md)
+    if numbered and not ca and not dashed:
         return "", ""
     junk = lambda v: (not v or v.lower() in NOT_A_CREDIT
                       or re.fullmatch(r"[\d\s._\-/]+|c\d{2,3}|\d{3,4}[pk]|v\d+|\d+x\d+", v, re.I) is not None)
@@ -849,6 +850,12 @@ def same_case(parent: Path, name: str) -> str:
         return name
 
 
+def set_of(work: str) -> str:
+    """The set in a Cosplay work title: "Starfall Bunny - Bonus" → "Starfall Bunny" (the variant is after the dash)."""
+    head, sep, tail = work.rpartition(" - ")
+    return tidy(head) if sep and tidy(head) and tidy(tail) else work
+
+
 def cosplay_plan(root: Path, names: list[str]) -> dict[str, dict]:
     """Where uploaded Cosplay sets go: {name: {cosplayer, set}}. The name itself becomes the variant.
     Variants are found among the uploaded siblings of the same cosplayer, and an upload also joins a set
@@ -866,11 +873,13 @@ def cosplay_plan(root: Path, names: list[str]) -> dict[str, dict]:
             existing = {p.name.lower(): p.name for p in here.iterdir() if p.is_dir() and not p.name.startswith(".")}
         except OSError:
             existing = {}
-        found = variant_groups([parsed[n]["work"] for n in group])
+        # "Cosplayer - Set - Variant" (docs/NAMING.md): a second " - " marks the variant outright
+        works = [set_of(parsed[n]["work"]) for n in group]
+        found = variant_groups(works)
         for i, n in enumerate(group):
-            work = parsed[n]["work"]
+            work = works[i]
             if i in found:
-                set_name = found[i][0]
+                set_name = tidy(found[i][0]) or found[i][0]
             else:
                 set_name = joins_existing(work, existing) or work
             set_name = existing.get(set_name.lower(), set_name)
