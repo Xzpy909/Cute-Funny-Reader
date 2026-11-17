@@ -454,8 +454,8 @@ def test_top_bar_scope_and_add(home_page):
     assert pg.evaluate("getComputedStyle(document.getElementById('topBar')).backdropFilter").startswith("blur")
     pg.click("#btnScope")
     pg.locator("#topMenu [data-scope]", has_text="Comics").click()
-    pg.wait_for_function("location.hash.startsWith('#/library/')")
-    assert pg.inner_text("#scopeName") == "Comics" and pg.evaluate("document.activeElement.id") == "q"
+    pg.wait_for_function("location.hash.startsWith('#/library/') && document.getElementById('scopeName').textContent === 'Comics'")
+    assert pg.evaluate("document.activeElement.id") == "q"
     pg.click("#btnScope"); pg.locator("#topMenu [data-scope='']").click()
     pg.wait_for_function("!location.hash.startsWith('#/library/')")
     pg.click("#btnTopAdd")                                   # Home with several libraries: asks which one
