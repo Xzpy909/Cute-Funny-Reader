@@ -870,11 +870,25 @@ body.booting .app{visibility:hidden}
 .optsheet{width:min(600px,94vw);max-height:92vh;overflow-y:auto}
 .optnote{margin:0;font-size:12.5px;color:var(--mute);line-height:1.5}.optnote.warn{color:#ffb86b}
 .optlist{display:grid;gap:8px}
-.optrow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);cursor:pointer;transition:border-color .2s,background .2s}
+.optrow{display:grid;grid-template-columns:auto 1fr auto 30px;gap:12px;align-items:center;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);cursor:pointer;transition:border-color .2s,background .2s}
 .optrow:has(input:checked){border-color:var(--pop);background:color-mix(in srgb,var(--pop) 10%,transparent)}
 .optrow input{accent-color:var(--pop);width:17px;height:17px;margin:0}
 .optrow .on{display:grid;gap:2px;min-width:0}.optrow .on b{font-size:14.5px;color:var(--text)}.optrow .on small{font-weight:500;color:var(--mute);font-size:12px}
 .optrow .est{font:600 13px var(--mono);color:var(--text);white-space:nowrap}.optrow .est small{color:var(--mint);font-size:12px}.optrow .est i{color:var(--mute);font-style:normal;font-weight:400}
+.optdel{width:28px;height:28px;border-radius:8px;color:var(--mute);font-size:18px;line-height:1;white-space:nowrap}
+.optdel:hover{color:#ff8aa5;background:rgba(255,255,255,.06)}
+.optdel.armed{width:auto;padding:0 8px;font-size:12px;font-weight:700;background:#c21f3d;color:#fff;justify-self:end}
+.optrow:has(.optdel.armed){grid-template-columns:auto 1fr auto auto}
+.optadd{justify-self:start;font-weight:700;font-size:13.5px;color:var(--lemon);padding:4px 2px}
+.optadd:hover{text-decoration:underline}
+.optnew{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 14px;border-radius:14px;border:1px dashed var(--line)}
+.optnew input{height:34px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 10px;font:600 13.5px inherit}
+.optnew #optNewName{flex:1;min-width:160px;font-family:inherit}
+.optnew label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#cfcad8}
+.optnew label input{width:64px;font-family:var(--mono)}
+.optnew small{flex-basis:100%;font-size:11.5px;color:var(--mute);font-weight:500}
+.optnew .formerr{flex-basis:100%}
+.optnew .formerr:empty{display:none}
 .optchk{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13.5px;font-weight:600;color:#cfcad8;cursor:pointer}
 .optchk input[type=checkbox]{accent-color:var(--pop);width:16px;height:16px;margin:0}
 .optchk input[type=number]{width:84px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 8px;font:600 13px var(--mono)}

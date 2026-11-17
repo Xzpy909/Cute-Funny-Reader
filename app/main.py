@@ -714,8 +714,28 @@ def _selected(body: dict) -> list[dict]:
 @app.get("/api/optimize/presets")
 def optimize_presets():
     from .optimize import KEEP_DAYS
-    presets, placeholder = opt.presets()
-    return {"presets": presets, "placeholder": placeholder, "keepDays": KEEP_DAYS}
+    return {"presets": opt.presets(), "keepDays": KEEP_DAYS}
+
+
+@app.post("/api/optimize/presets")
+def optimize_preset_add(body: dict = Body(...)):
+    me()
+    try:
+        return opt.add_preset(body.get("name"), body.get("quality"), body.get("speed"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/optimize/presets/{pid}")
+def optimize_preset_delete(pid: str):
+    me()
+    try:
+        opt.delete_preset(pid)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except KeyError:
+        raise HTTPException(404, "preset not found")
+    return {"ok": True}
 
 
 @app.post("/api/optimize/estimate")

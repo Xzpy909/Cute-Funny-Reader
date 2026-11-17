@@ -3550,14 +3550,15 @@ async function openOptimize(o) {
     backdropCloses(m, closeOptimize);
     m.addEventListener('click', optClick);
     m.addEventListener('change', optChange);
+    m.addEventListener('submit', e => { if (e.target.id === 'optNewForm') { e.preventDefault(); savePreset(); } });
   }
   const lib = o.books[0]?.library, cos = isCosplay(lib);
-  OPT.cur = { ...o, lib, cos, preset: null, shrink: cos, maxEdge: 4000, keep: true, est: {}, gen: (OPT.cur?.gen || 0) + 1 };
+  OPT.cur = { ...o, lib, cos, preset: null, shrink: false, maxEdge: 4000, adding: false, keep: true, est: {}, gen: (OPT.cur?.gen || 0) + 1 };
   m.innerHTML = `<div class="sheet libform optsheet"><h3>✨ Optimize ${escWrap(o.title)}</h3><p class="hintline">Loading…</p></div>`;
   m.classList.add('open');
   let p;
   try { p = await api.get('/api/optimize/presets'); } catch (e) { m.querySelector('.hintline').textContent = 'Couldn’t load the presets.'; return; }
-  Object.assign(OPT.cur, { presets: p.presets, placeholder: p.placeholder, keepDays: p.keepDays, preset: p.presets[0]?.id });
+  Object.assign(OPT.cur, { presets: p.presets, keepDays: p.keepDays, preset: p.presets[0]?.id });
   drawOptimize();
   estimateAll();
 }
@@ -3569,11 +3570,19 @@ function drawOptimize() {
   const why = any && Object.entries(any.why || {}).map(([w, n]) => `${plural(n, V(c.lib).b)} skipped — ${esc(w)}`).join('<br>');
   m.querySelector('.sheet').innerHTML = `<h3>✨ Optimize ${escWrap(c.title)}</h3>
     <p class="hintline" id="optHead">${head}</p>
-    ${c.placeholder ? `<p class="optnote">These are <b>placeholder</b> presets for testing. Your own go in <code>optimize-presets.json</code> in the config folder.</p>` : ''}
     <div class="optlist" role="radiogroup" aria-label="Preset">${c.presets.map(p => `<label class="optrow">
       <input type="radio" name="optPreset" value="${esc(p.id)}" ${p.id === c.preset ? 'checked' : ''}>
-      <span class="on"><b>${esc(p.name)}</b>${p.hint ? `<small>${esc(p.hint)}</small>` : ''}</span>
-      <span class="est" data-est="${esc(p.id)}">${estText(c.est[p.id])}</span></label>`).join('')}</div>
+      <span class="on"><b>${esc(p.name)}</b><small>Quality ${p.quality} · speed ${p.speed}${p.builtin ? ' · the baseline' : ''}${p.hint ? ` · ${esc(p.hint)}` : ''}</small></span>
+      <span class="est" data-est="${esc(p.id)}">${estText(c.est[p.id])}</span>
+      ${p.builtin ? '<span></span>' : `<button type="button" class="optdel" data-delpreset="${esc(p.id)}" title="Delete this preset" aria-label="Delete preset ${esc(p.name)}">×</button>`}</label>`).join('')}</div>
+    ${c.adding ? `<form class="optnew" id="optNewForm">
+        <input type="text" id="optNewName" placeholder="Preset name" maxlength="40" aria-label="Preset name" autocomplete="off" required>
+        <label>Quality <input type="number" id="optNewQ" min="0" max="100" value="${c.newQ ?? 70}" required></label>
+        <label>Speed <input type="number" id="optNewS" min="0" max="10" value="${c.newS ?? 6}" required></label>
+        <button type="submit" class="btn-sm pri">Save</button><button type="button" class="btn-sm" data-opt="cancelnew">Cancel</button>
+        <small>Quality 0–100: higher looks better and is bigger. Speed 0–10: lower makes smaller files but converts slower.</small>
+        <div class="formerr" id="optNewErr"></div></form>`
+      : '<button type="button" class="optadd" data-opt="newpreset">+ New preset</button>'}
     <label class="optchk"><input type="checkbox" id="optShrink" ${c.shrink ? 'checked' : ''}> Shrink huge photos to
       <input type="number" id="optEdge" min="800" max="16000" step="100" value="${c.maxEdge}" aria-label="Longest side in pixels"> px on the long edge</label>
     <label class="optchk"><input type="checkbox" id="optKeep" ${c.keep ? 'checked' : ''}> Keep originals for ${plural(c.keepDays, 'day')} — undo from the menu any time</label>
@@ -3588,6 +3597,7 @@ const estText = e => !e ? '<i>estimating…</i>' : e.error ? '—' : `~${fmtByte
 async function estimateAll() {
   const c = OPT.cur, gen = c.gen, edge = optEdge();
   for (const p of c.presets) {
+    if (c.est[p.id]) continue;
     let e;
     try { e = await jsonFetch('POST', '/api/optimize/estimate', { ...c.sel, preset: p.id, maxEdge: edge }); }
     catch (err) { e = { error: err.message }; }
@@ -3609,11 +3619,36 @@ function optChange(e) {
     estimateAll();
   }
 }
+async function savePreset() {
+  const c = OPT.cur, err = $('#optNewErr');
+  c.newQ = +$('#optNewQ').value; c.newS = +$('#optNewS').value;
+  try {
+    const p = await jsonFetch('POST', '/api/optimize/presets', { name: $('#optNewName').value, quality: c.newQ, speed: c.newS });
+    c.presets = [...c.presets, p]; c.preset = p.id; c.adding = false;
+  } catch (e) { err.textContent = e.message; return; }
+  drawOptimize(); estimateAll();
+}
+async function deletePreset(btn) {
+  const c = OPT.cur, id = btn.dataset.delpreset;
+  if (!btn.classList.contains('armed')) {                         // deleting takes a second click
+    btn.classList.add('armed'); btn.textContent = 'Delete?';
+    return setTimeout(() => { if (btn.isConnected) { btn.classList.remove('armed'); btn.textContent = '×'; } }, 3500);
+  }
+  try { await jsonFetch('DELETE', `/api/optimize/presets/${encodeURIComponent(id)}`); }
+  catch (e) { $('#optErr').textContent = e.message; return; }
+  c.presets = c.presets.filter(p => p.id !== id); delete c.est[id];
+  if (c.preset === id) c.preset = c.presets[0]?.id;
+  drawOptimize();
+}
 async function optClick(e) {
+  const del = e.target.closest('[data-delpreset]');
+  if (del) { e.preventDefault(); return deletePreset(del); }      // (inside the row's label: don't select it)
   const a = e.target.closest('[data-opt]')?.dataset.opt; if (!a) return;
   const c = OPT.cur;
   if (a === 'cancel') return closeOptimize();
   if (a === 'compare') return openCompare();
+  if (a === 'newpreset') { c.adding = true; drawOptimize(); return $('#optNewName')?.focus(); }
+  if (a === 'cancelnew') { c.adding = false; return drawOptimize(); }
   if (a === 'start') {
     const btn = e.target.closest('button'); btn.disabled = true;
     try {

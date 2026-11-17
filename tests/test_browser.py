@@ -478,7 +478,18 @@ def test_optimize_from_the_menu_then_undo(server, browser):
         pg.locator(cos, has_text="Mirelle").first.click(button="right")
         pg.locator("#menu [data-mact=optimize]").click()
         pg.wait_for_selector("#optModal.open .optrow")
-        assert "placeholder" in pg.inner_text("#optModal .optnote").lower()
+        assert pg.inner_text("#optModal .optrow").startswith("Default") and not pg.locator("#optModal .optdel").count()
+        assert not pg.is_checked("#optShrink")                                   # shrinking is opt-in
+        pg.click("#optModal [data-opt=newpreset]")                              # a preset of your own
+        pg.fill("#optNewName", "Lighter"); pg.fill("#optNewQ", "50"); pg.fill("#optNewS", "8")
+        pg.press("#optNewName", "Enter")
+        pg.wait_for_selector("#optModal .optrow:has-text('Lighter') input:checked")
+        assert "Quality 50 · speed 8" in pg.inner_text("#optModal .optrow:has-text('Lighter')")
+        pg.wait_for_function("[...document.querySelectorAll('#optModal .est')].every(e => !/estimating/.test(e.textContent))")
+        pg.click("#optModal .optrow:has-text('Lighter') .optdel")
+        pg.click("#optModal .optrow:has-text('Lighter') .optdel")             # second click deletes
+        pg.wait_for_function("document.querySelectorAll('#optModal .optrow').length === 1")
+        assert pg.is_checked("#optModal input[value=default]")
         pg.wait_for_function("document.querySelector('#optModal .est') && !/estimating/.test(document.querySelector('#optModal .est').textContent)")
         assert "2 variants" in pg.inner_text("#optHead") and "−" in pg.inner_text("#optModal .est")
         pg.click("#optModal [data-opt=compare]")                         # full-screen before / after

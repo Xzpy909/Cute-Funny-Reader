@@ -120,11 +120,10 @@ which every current browser shows directly and which is usually much smaller tha
   in the menu puts it back. A page that wouldn't get smaller, GIFs and videos are left as they are.
 - Supported: `.cbz`, `.zip` and photo folders (`.cb7` sets are skipped for now).
 
-**Presets** live in `config/optimize-presets.json` (read each time the dialog opens — no restart needed). Copy
-`optimize-presets.example.json` there and edit it. Each preset: `name`, optional `hint`, `quality` (0–100),
-`speed` (0–10, slower = smaller), `subsampling` (`auto` = full colour detail for comics and manga, 4:2:0 for Cosplay;
-or `4:4:4` / `4:2:0`) and `grayscale` (store black-and-white pages as grayscale). Without the file, one placeholder
-preset is offered for testing.
+**Presets:** **Default** (quality 70, speed 6) is built in and can't be deleted — the baseline. Make your own with
+**+ New preset** in the dialog (name, quality 0–100, speed 0–10: lower is smaller but slower) and delete them with ×.
+They're kept in `config/optimize-presets.json`. A running job keeps the settings it started with.
+"Shrink huge photos" is off unless you tick it.
 
 ## Reader features
 

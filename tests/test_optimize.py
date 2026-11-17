@@ -116,7 +116,7 @@ def test_queue_runs_pauses_resumes_and_survives_a_restart(lib, monkeypatch):
         make_cbz(L.LIB_ROOT / l["path"] / n.split()[0] / f"{n}.cbz", {"001.jpg": photo(seed=len(n)), "002.jpg": photo(seed=3)})
     lib.scan()
     o = Optimizer(lib)
-    monkeypatch.setattr(o, "presets", lambda: ([P], False))
+    monkeypatch.setattr(o, "presets", lambda: [P])
     j = o.start("me", list(lib.books.values()), "t", keep=True, max_edge=0, title="All")
     assert o.step()                                        # one book
     o.control("me", j["id"], "pause")
@@ -124,7 +124,7 @@ def test_queue_runs_pauses_resumes_and_survives_a_restart(lib, monkeypatch):
     assert len(o.jobs.get(j["id"])["done"]) == 1
     o.control("me", j["id"], "resume")
     o2 = Optimizer(lib)                                    # the server restarted
-    monkeypatch.setattr(o2, "presets", lambda: ([P], False))
+    monkeypatch.setattr(o2, "presets", lambda: [P])
     while o2.step():
         if o2.jobs.get(j["id"])["state"] == "done":
             break
@@ -144,16 +144,27 @@ def test_kept_originals_are_cleaned_up_after_the_keep_time(lib):
     assert not o.can_undo(b["id"]) and not list((L.CONFIG_DIR / "originals").iterdir())
 
 
-def test_estimate_and_presets_file(lib):
+def test_default_preset_and_own_presets(lib):
     b = _book(lib, {"001.jpg": photo(seed=1), "002.jpg": photo(seed=2)})
     o = Optimizer(lib)
-    presets, placeholder = o.presets()
-    assert placeholder and presets[0]["id"] == "placeholder"
-    (L.CONFIG_DIR / "optimize-presets.json").write_text('{"presets": [{"id": "small", "name": "Small", "quality": 40}]}')
-    presets, placeholder = o.presets()
-    assert not placeholder and [p["id"] for p in presets] == ["small"]
-    e = o.estimate([b], o.preset("small"), 0)
+    assert [(p["id"], p["quality"], p["speed"]) for p in o.presets()] == [("default", 70, 6)]
+    mine = o.add_preset("Small", 40, 8)
+    assert [p["name"] for p in o.presets()] == ["Default", "Small"]
+    with pytest.raises(ValueError):
+        o.add_preset("small", 50, 6)                       # same name
+    with pytest.raises(ValueError):
+        o.add_preset("Huge", 130, 6)                       # quality out of range
+    with pytest.raises(ValueError):
+        o.delete_preset("default")                         # the baseline stays
+    e = o.estimate([b], o.preset(mine["id"]), 0)
     assert e["books"] == 1 and 0 < e["after"] < e["before"]
+    j = o.start("me", [b], mine["id"], keep=True, max_edge=0, title="x")
+    o.delete_preset(mine["id"])                            # deleted while queued: the job keeps its settings
+    assert [p["id"] for p in o.presets()] == ["default"]
+    while o.step():
+        if o.jobs.get(j["id"])["state"] == "done":
+            break
+    assert o.jobs.get(j["id"])["settings"]["quality"] == 40 and lib.get(b["id"])["entries"] == ["001.avif", "002.avif"]
 
 
 def test_the_api_end_to_end(tmp_path, monkeypatch):
@@ -172,12 +183,16 @@ def test_the_api_end_to_end(tmp_path, monkeypatch):
     M.lib.scan()
     sid = next(iter(M.lib.books.values()))["seriesId"]
     pr = c.get("/api/optimize/presets").json()
-    assert pr["placeholder"] and pr["presets"][0]["id"] == "placeholder"
-    est = c.post("/api/optimize/estimate", json={"series": [sid], "preset": "placeholder"}).json()
+    assert [p["id"] for p in pr["presets"]] == ["default"]
+    mine = c.post("/api/optimize/presets", json={"name": "Lighter", "quality": 55, "speed": 7}).json()
+    assert [p["name"] for p in c.get("/api/optimize/presets").json()["presets"]] == ["Default", "Lighter"]
+    assert c.delete("/api/optimize/presets/default").status_code == 400
+    assert c.delete(f"/api/optimize/presets/{mine['id']}").status_code == 200
+    est = c.post("/api/optimize/estimate", json={"series": [sid], "preset": "default"}).json()
     assert est["books"] == 2 and est["after"] < est["before"] and est["sample"]
-    cmp = c.get(f"/api/books/{est['sample']['book']}/pages/{est['sample']['page']}/optimized", params={"preset": "placeholder"})
+    cmp = c.get(f"/api/books/{est['sample']['book']}/pages/{est['sample']['page']}/optimized", params={"preset": "default"})
     assert cmp.headers["content-type"] == "image/avif" and int(cmp.headers["X-After"]) < int(cmp.headers["X-Before"])
-    job = c.post("/api/optimize", json={"series": [sid], "preset": "placeholder", "keep": True, "title": "Starfall"}).json()
+    job = c.post("/api/optimize", json={"series": [sid], "preset": "default", "keep": True, "title": "Starfall"}).json()
     while M.opt.step():
         pass
     j = c.get("/api/jobs").json()["jobs"][0]

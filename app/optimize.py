@@ -35,12 +35,10 @@ THREADS = max(1, min(2, (os.cpu_count() or 2) - 1))       # pages converted at o
 NEVER = (".gif", ".avif", ".svg")                           # GIF may be animated; AVIF is already the target
 SUPPORTED_SRC = ("cbz", "zip", "folder")
 
-# The presets are the owner's to define (see optimize-presets.json in the config folder). Until that file
-# exists, this single placeholder makes the feature testable — it is not a recommendation.
-PLACEHOLDER_PRESETS = [
-    {"id": "placeholder", "name": "Placeholder (for testing)", "hint": "replace with your own presets",
-     "quality": 70, "speed": 6, "subsampling": "auto", "grayscale": True},
-]
+# "Default" is built in and can't be deleted — the baseline to compare everything else with. Your own presets
+# (made in the Optimize dialog) are kept in optimize-presets.json in the config folder.
+DEFAULT_PRESET = {"id": "default", "name": "Default", "quality": 70, "speed": 6, "subsampling": "auto",
+                  "grayscale": True, "builtin": True}
 PRESET_KEYS = {"id", "name", "hint", "quality", "speed", "subsampling", "grayscale"}
 
 
@@ -126,28 +124,64 @@ class Optimizer:
     def presets_file(self) -> Path:
         return L.CONFIG_DIR / "optimize-presets.json"
 
-    def presets(self) -> tuple[list[dict], bool]:
-        """(presets, placeholder?) — the owner's file when there is one and it reads, else the placeholder."""
+    def _own(self) -> list[dict]:
+        """The presets made in the dialog (or written into the file by hand)."""
         try:
             raw = json.loads(self.presets_file.read_text("utf-8"))
-            items = raw.get("presets", raw) if isinstance(raw, dict) else raw
-            out = []
-            for i, p in enumerate(items):
-                if not isinstance(p, dict) or "quality" not in p:
-                    continue
-                p = {k: v for k, v in p.items() if k in PRESET_KEYS}
-                p.setdefault("id", f"preset{i + 1}"); p.setdefault("name", p["id"])
-                out.append(p)
-            if out:
-                return out, False
         except FileNotFoundError:
-            pass
+            return []
         except Exception as e:  # noqa: BLE001
-            log.warning("optimize-presets.json can't be read (%s) — using the placeholder", e)
-        return [dict(p) for p in PLACEHOLDER_PRESETS], True
+            log.warning("optimize-presets.json can't be read (%s) — only the Default preset is offered", e)
+            return []
+        items = raw.get("presets", raw) if isinstance(raw, dict) else raw
+        out, seen = [], {DEFAULT_PRESET["id"]}
+        for i, p in enumerate(items if isinstance(items, list) else []):
+            if not isinstance(p, dict) or "quality" not in p:
+                continue
+            p = {k: v for k, v in p.items() if k in PRESET_KEYS}
+            p.setdefault("id", f"preset{i + 1}"); p.setdefault("name", p["id"])
+            if p["id"] in seen:
+                continue
+            seen.add(p["id"]); out.append(p)
+        return out
+
+    def presets(self) -> list[dict]:
+        """Default first, then your own."""
+        return [dict(DEFAULT_PRESET)] + self._own()
+
+    def _save_own(self, items: list[dict]):
+        f = self.presets_file
+        tmp = f.with_name(f.name + ".tmp")
+        tmp.write_text(json.dumps({"presets": items}, ensure_ascii=False, indent=2), "utf-8")
+        os.replace(tmp, f)
+
+    def add_preset(self, name: str, quality, speed) -> dict:
+        name = " ".join(str(name or "").split())[:40]
+        if not name:
+            raise ValueError("Give the preset a name")
+        try:
+            q, sp = int(quality), int(speed)
+        except (TypeError, ValueError):
+            raise ValueError("Quality and speed must be numbers")
+        if not 0 <= q <= 100 or not 0 <= sp <= 10:
+            raise ValueError("Quality goes from 0 to 100, speed from 0 to 10")
+        own = self._own()
+        if any(p["name"].lower() == name.lower() for p in self.presets()):
+            raise ValueError(f"There's already a preset called “{name}”")
+        p = {"id": secrets.token_hex(4), "name": name, "quality": q, "speed": sp, "subsampling": "auto", "grayscale": True}
+        self._save_own(own + [p])
+        return p
+
+    def delete_preset(self, pid: str):
+        if pid == DEFAULT_PRESET["id"]:
+            raise ValueError("The Default preset can't be deleted")
+        own = self._own()
+        if not any(p["id"] == pid for p in own):
+            raise KeyError(pid)
+        self._save_own([p for p in own if p["id"] != pid])
 
     def preset(self, pid: str) -> dict:
-        p = next((p for p in self.presets()[0] if p["id"] == pid), None)
+        p = next((p for p in self.presets() if p["id"] == pid), None)
         if not p:
             raise ValueError("Unknown preset")
         return p
@@ -395,7 +429,7 @@ class Optimizer:
     def encode_sample(self, b: dict, n: int, preset: dict, max_edge: int) -> tuple[bytes, bytes]:
         """(original, avif) of one page — the avif cached, for the compare view."""
         name = b["entries"][n]
-        f = L.CONFIG_DIR / "cache" / "compare" / f"{b['id']}-{b['mtime']}-{n}-{preset['id']}-{preset.get('quality')}-{max_edge}.avif"
+        f = L.CONFIG_DIR / "cache" / "compare" / f"{b['id']}-{b['mtime']}-{n}-{preset.get('quality')}-{preset.get('speed')}-{preset.get('subsampling')}-{max_edge}.avif"
         orig = self.lib.read(b, name)
         if f.exists():
             return orig, f.read_bytes()
@@ -408,7 +442,7 @@ class Optimizer:
     def estimate(self, books: list[dict], preset: dict, max_edge: int) -> dict:
         ok = [b for b in books if not self.why_not(b)]
         total = sum(self.size(b) for b in ok)
-        key = (tuple(sorted(b["id"] + str(b["mtime"]) for b in ok)), preset["id"], preset.get("quality"), max_edge)
+        key = (tuple(sorted(b["id"] + str(b["mtime"]) for b in ok)), preset.get("quality"), preset.get("speed"), preset.get("subsampling"), max_edge)
         if key not in self._ratio_cache:
             before = after = 0
             for b, n in self.sample_pages(ok):
@@ -430,6 +464,7 @@ class Optimizer:
             raise ValueError("Nothing here can be optimized: " + (self.why_not(books[0]) if books else "nothing selected"))
         jid = secrets.token_hex(5)
         job = {"id": jid, "owner": owner, "title": title, "preset": preset["id"], "presetName": preset.get("name"),
+               "settings": {k: v for k, v in preset.items() if k != "builtin"},
                "keep": bool(keep), "maxEdge": int(max_edge or 0), "books": [b["id"] for b in ok],
                "done": [], "skipped": [], "failed": [], "state": "queued", "created": time.time(),
                "before": 0, "after": 0, "pagesTotal": sum(len(b.get("entries") or []) for b in ok), "pagesDone": 0}
@@ -496,10 +531,7 @@ class Optimizer:
 
         def progress(done, total):
             self.live[jid] = {**self.live[jid], "done": done, "pages": total}
-        try:
-            preset = self.preset(job["preset"])
-        except ValueError:
-            preset = {"id": job["preset"], "quality": 70, "speed": 6}
+        preset = job.get("settings") or {**DEFAULT_PRESET, "id": job["preset"]}
         try:
             r = self.convert(b, preset, job["keep"], job["maxEdge"], progress, stop)
             job = self.jobs.get(jid)
