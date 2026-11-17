@@ -2796,6 +2796,12 @@ class Library:
     def get(self, bid: str) -> dict | None:
         return self.books.get(bid)
 
+    def forget_extracted(self, b: dict):
+        """Drop the extracted copy of a .cb7 that was replaced in place (its cache name holds the file's mtime in
+        seconds — a swap within the same second would otherwise keep serving the old pages)."""
+        for d in (CONFIG_DIR / "cache" / "cb7").glob(f"{b['id']}-*"):
+            shutil.rmtree(d, ignore_errors=True)
+
     def _x7_dir(self, b: dict) -> Path:
         """.cb7 (solid 7z) can't be read entry-by-entry cheaply: extract once into the cache."""
         d = CONFIG_DIR / "cache" / "cb7" / f"{b['id']}-{b['mtime']}"

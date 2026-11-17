@@ -966,7 +966,8 @@ def optimize_presets():
 def optimize_preset_add(body: dict = Body(...)):
     me()
     try:
-        return opt.add_preset(body.get("name"), body.get("quality"), body.get("speed"))
+        return opt.add_preset(body.get("name"), body.get("quality"), body.get("speed"), body.get("subsampling") or "auto",
+                              body.get("grayscale", True) is not False, body.get("mode") or "avif")
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -1012,7 +1013,9 @@ def optimize_compare(bid: str, n: int, request: Request, preset: str, max: int =
         orig, new = opt.encode_sample(b, n, opt.preset(preset), max)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    r = cached(request, f"opt-{bid}-{b['mtime']}-{n}-{preset}-{max}", new, "image/avif" if new != orig else mimetypes.guess_type(b["entries"][n])[0] or "image/jpeg")
+    p = opt.preset(preset)
+    mime = ("image/webp" if p.get("mode") == "lossless" else "image/avif") if new != orig else mimetypes.guess_type(b["entries"][n])[0] or "image/jpeg"
+    r = cached(request, f"opt-{bid}-{b['mtime']}-{n}-{preset}-{max}", new, mime)
     r.headers["X-Before"], r.headers["X-After"] = str(len(orig)), str(len(new))
     r.headers["Access-Control-Expose-Headers"] = "X-Before, X-After"
     return r

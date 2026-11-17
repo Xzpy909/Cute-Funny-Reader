@@ -3694,29 +3694,44 @@ async function openOptimize(o) {
 }
 function closeOptimize() { $('#optModal')?.classList.remove('open'); if (OPT.cur) OPT.cur.gen++; }
 const optEdge = () => OPT.cur.shrink ? Math.max(800, +OPT.cur.maxEdge || 4000) : 0;
+// the built-in Lossless preset only matters for lossless (RAW: PNG / BMP / TIFF) books — shown once the first
+// estimate says the selection has some; presets you made yourself are always shown
+const optShown = () => { const c = OPT.cur, raw = Object.values(c.est).some(e => e?.raw); return c.presets.filter(p => p.id !== 'lossless' || raw); };
+const presetDesc = p => p.mode === 'lossless'
+  ? 'Lossless WebP · pixel-exact · only PNG / BMP / TIFF pages'
+  : `Quality ${p.quality} · speed ${p.speed}${p.subsampling && p.subsampling !== 'auto' ? ` · colour ${p.subsampling}` : ''}${p.grayscale === false ? ' · no B&amp;W detection' : ''}${p.id === 'default' ? ' · the baseline' : ''}${p.hint ? ` · ${esc(p.hint)}` : ''}`;
 function drawOptimize() {
   const c = OPT.cur, m = $('#optModal'), any = Object.values(c.est)[0];
   const head = any ? `${plural(any.books, V(c.lib).b)} · ${any.pages.toLocaleString()} pages · ${fmtBytes(any.before)}` : `${plural(c.books.length, V(c.lib).b)}`;
   const why = any && Object.entries(any.why || {}).map(([w, n]) => `${plural(n, V(c.lib).b)} skipped — ${esc(w)}`).join('<br>');
   m.querySelector('.sheet').innerHTML = `<h3>✨ Optimize ${escWrap(c.title)}</h3>
     <p class="hintline" id="optHead">${head}</p>
-    <div class="optlist" role="radiogroup" aria-label="Preset">${c.presets.map(p => `<label class="optrow">
+    <div class="optlist" role="radiogroup" aria-label="Preset">${optShown().map(p => `<label class="optrow">
       <input type="radio" name="optPreset" value="${esc(p.id)}" ${p.id === c.preset ? 'checked' : ''}>
-      <span class="on"><b>${esc(p.name)}</b><small>Quality ${p.quality} · speed ${p.speed}${p.builtin ? ' · the baseline' : ''}${p.hint ? ` · ${esc(p.hint)}` : ''}</small></span>
+      <span class="on"><b>${esc(p.name)}</b><small>${presetDesc(p)}</small></span>
       <span class="est" data-est="${esc(p.id)}">${estText(c.est[p.id])}</span>
       ${p.builtin ? '<span></span>' : `<button type="button" class="optdel" data-delpreset="${esc(p.id)}" title="Delete this preset" aria-label="Delete preset ${esc(p.name)}">×</button>`}</label>`).join('')}</div>
     ${c.adding ? `<form class="optnew" id="optNewForm">
         <input type="text" id="optNewName" placeholder="Preset name" maxlength="40" aria-label="Preset name" autocomplete="off" required>
-        <label>Quality <input type="number" id="optNewQ" min="0" max="100" value="${c.newQ ?? 70}" required></label>
-        <label>Speed <input type="number" id="optNewS" min="0" max="10" value="${c.newS ?? 6}" required></label>
+        <label>Quality <input type="number" id="optNewQ" min="0" max="100" value="${c.newQ ?? 70}" required ${c.newMode === 'lossless' ? 'disabled' : ''}></label>
+        <label>Speed <input type="number" id="optNewS" min="0" max="10" value="${c.newS ?? 6}" required ${c.newMode === 'lossless' ? 'disabled' : ''}></label>
         <button type="submit" class="btn-sm pri">Save</button><button type="button" class="btn-sm" data-opt="cancelnew">Cancel</button>
         <small>Quality 0–100: higher looks better and is bigger. Speed 0–10: lower makes smaller files but converts slower.</small>
+        <details class="optadv" ${c.advOpen ? 'open' : ''}><summary>Advanced</summary>
+          <label>Format <select id="optNewMode">
+            <option value="avif" ${c.newMode !== 'lossless' ? 'selected' : ''}>AVIF — much smaller, looks the same</option>
+            <option value="lossless" ${c.newMode === 'lossless' ? 'selected' : ''}>Lossless WebP — pixel-exact (PNG / BMP / TIFF pages only)</option></select></label>
+          <label>Colour <select id="optNewSub" ${c.newMode === 'lossless' ? 'disabled' : ''}>
+            ${[['auto', 'Auto (4:4:4)'], ['4:4:4', '4:4:4 — full colour detail'], ['4:2:0', '4:2:0 — smaller, softer colour edges']].map(([v, t]) => `<option value="${v}" ${(c.newSub || 'auto') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label class="optchk"><input type="checkbox" id="optNewGray" ${c.newGray !== false ? 'checked' : ''} ${c.newMode === 'lossless' ? 'disabled' : ''}> Save black-and-white pages as grayscale (smaller)</label>
+          <small>Max size: “Shrink huge photos” below.</small>
+        </details>
         <div class="formerr" id="optNewErr"></div></form>`
       : '<button type="button" class="optadd" data-opt="newpreset">+ New preset</button>'}
     <label class="optchk"><input type="checkbox" id="optShrink" ${c.shrink ? 'checked' : ''}> Shrink huge photos to
       <input type="number" id="optEdge" min="800" max="16000" step="100" value="${c.maxEdge}" aria-label="Longest side in pixels"> px on the long edge</label>
     <label class="optchk"><input type="checkbox" id="optKeep" ${c.keep ? 'checked' : ''}> Keep originals for ${plural(c.keepDays, 'day')} — undo from the menu any time</label>
-    ${any?.raw ? `<p class="optnote warn">${plural(any.raw, V(c.lib).b)} ${any.raw === 1 ? 'is' : 'are'} lossless (RAW). ${any.raw === 1 ? 'It' : 'They'} won’t be lossless any more.</p>` : ''}
+    ${any?.raw && c.presets.find(p => p.id === c.preset)?.mode !== 'lossless' ? `<p class="optnote warn">${plural(any.raw, V(c.lib).b)} ${any.raw === 1 ? 'is' : 'are'} lossless (RAW). ${any.raw === 1 ? 'It' : 'They'} won’t be lossless any more — pick <b>Lossless</b> to keep every pixel.</p>` : ''}
     ${why ? `<p class="optnote">${why}</p>` : ''}
     <div class="formerr" id="optErr"></div>
     <div class="formfoot"><button type="button" class="btn-ghost" data-opt="compare" ${any?.books ? '' : 'disabled'}>Compare pages…</button><div class="grow"></div>
@@ -3727,20 +3742,27 @@ const estText = e => !e ? '<i>estimating…</i>' : e.error ? '—' : `~${fmtByte
 async function estimateAll() {
   const c = OPT.cur, gen = c.gen, edge = optEdge();
   for (const p of c.presets) {
-    if (c.est[p.id]) continue;
+    if (c.est[p.id] || !optShown().includes(p)) continue;
     let e;
     try { e = await jsonFetch('POST', '/api/optimize/estimate', { ...c.sel, preset: p.id, maxEdge: edge }); }
     catch (err) { e = { error: err.message }; }
     if (gen !== OPT.cur.gen || edge !== optEdge()) return;          // closed, or the size changed meanwhile
     const first = !Object.values(c.est).some(x => x && !x.error);
     c.est[p.id] = e;
-    if (first && !e.error) drawOptimize();                         // the header, warnings and buttons need it
+    if (first && !e.error) { drawOptimize(); if (e.raw) return estimateAll(); }   // header, warnings, buttons — and RAW shows Lossless
     else { const el = $(`#optModal [data-est="${CSS.escape(p.id)}"]`); if (el) el.innerHTML = estText(e); }
   }
 }
 function optChange(e) {
   const c = OPT.cur; if (!c) return;
-  if (e.target.name === 'optPreset') { c.preset = e.target.value; return; }
+  if (e.target.name === 'optPreset') { c.preset = e.target.value; return drawOptimize(); }   // (the RAW warning depends on it)
+  if (['optNewMode', 'optNewSub', 'optNewGray', 'optNewQ', 'optNewS', 'optNewName'].includes(e.target.id)) {
+    const name = $('#optNewName').value;
+    Object.assign(c, { newMode: $('#optNewMode').value, newSub: $('#optNewSub').value, newGray: $('#optNewGray').checked,
+      newQ: +$('#optNewQ').value, newS: +$('#optNewS').value, advOpen: true });
+    if (e.target.id === 'optNewMode') { drawOptimize(); $('#optNewName').value = name; }   // lossless greys out what doesn't apply
+    return;
+  }
   if (e.target.id === 'optKeep') { c.keep = e.target.checked; return; }
   if (e.target.id === 'optShrink' || e.target.id === 'optEdge') {
     c.shrink = $('#optShrink').checked; c.maxEdge = +$('#optEdge').value || 4000;
@@ -3753,7 +3775,9 @@ async function savePreset() {
   const c = OPT.cur, err = $('#optNewErr');
   c.newQ = +$('#optNewQ').value; c.newS = +$('#optNewS').value;
   try {
-    const p = await jsonFetch('POST', '/api/optimize/presets', { name: $('#optNewName').value, quality: c.newQ, speed: c.newS });
+    c.newMode = $('#optNewMode').value; c.newSub = $('#optNewSub').value; c.newGray = $('#optNewGray').checked;
+    const p = await jsonFetch('POST', '/api/optimize/presets', { name: $('#optNewName').value, quality: c.newQ, speed: c.newS,
+      mode: c.newMode, subsampling: c.newSub, grayscale: c.newGray });
     c.presets = [...c.presets, p]; c.preset = p.id; c.adding = false;
   } catch (e) { err.textContent = e.message; return; }
   drawOptimize(); estimateAll();
