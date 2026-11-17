@@ -86,6 +86,7 @@ def public(b: dict) -> dict:
     b = lib.effective(b)
     out = {k: b.get(k) for k in PUBLIC_FIELDS}
     out["edited"] = bool(b.get("edited"))
+    out["unsaved"] = bool(b.get("unsaved"))                        # edits the file could hold but doesn't yet
     out["trashed"] = (lib.trash.get(b["id"]) or {}).get("at")       # marked for the trash (still in place)
     out["hasCover"] = lib.has_cover(b)
     out["seriesCover"] = bool(b.get("seriesCover"))
@@ -276,6 +277,20 @@ def edit_series_details(sid: str, body: dict = Body(...)):
     except OSError as e:
         raise HTTPException(500, str(e))
     return {"books": n}
+
+
+@app.post("/api/series/{sid}/write")
+async def write_series_edits(sid: str):
+    """Write the saved details / tags / cover choice into the series' files (metadata.json) — on request,
+    because it rewrites each archive (minutes for a set of several GB)."""
+    own_series(sid)
+    try:
+        n = await asyncio.to_thread(lib.write_edits, sid)
+    except KeyError:
+        raise HTTPException(404, "series not found")
+    except OSError as e:
+        raise HTTPException(500, str(e))
+    return {"files": n}
 
 
 @app.put("/api/series/{sid}/cover")
@@ -1102,7 +1117,7 @@ def cover(bid: str, request: Request, w: int = 480):
     data = lib.cover(b, w)
     if not data:
         raise HTTPException(404, "no cover")
-    return cached(request, f"{bid}-{b['mtime']}-c{w}", data, "image/webp")
+    return cached(request, f"{bid}-{b['mtime']}-{lib.cover_tag(b)}-c{w}", data, "image/webp")
 
 
 @app.get("/api/stack")
@@ -1114,7 +1129,7 @@ def stack(request: Request, books: str):
     data = lib.stack_back(bs)
     if not data:
         raise HTTPException(404, "no covers")
-    return cached(request, "-".join(f"{b['id']}-{b['mtime']}" for b in bs) + "-stack", data, "image/webp")
+    return cached(request, "-".join(f"{b['id']}-{b['mtime']}-{lib.cover_tag(b)}" for b in bs) + "-stack", data, "image/webp")
 
 
 @app.get("/api/books/{bid}/panels/{n}")

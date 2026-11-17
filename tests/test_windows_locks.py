@@ -55,7 +55,8 @@ def test_rename_after_reading_pages(lib, windows):
     b, root = _book(lib)
     lib.read(b, b["entries"][0])                         # the reader has the archive open (cached handle)
     assert _open_under(root / "Images 2026-11-16")
-    lib.edit_series(b["seriesId"], {"author": "someone"})  # rewrites the archive
+    lib.edit_series(b["seriesId"], {"author": "someone"})  # saved in the database …
+    assert lib.write_edits(b["seriesId"]) == 1             # … then written into the archive (a rewrite)
     lib.read(lib.books[b["id"]], b["entries"][1])
     new = lib.rename_series(b["seriesId"], "test raw manga")
     assert (root / "test raw manga" / "Images 2026-11-16.cbz").exists()
