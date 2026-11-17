@@ -522,7 +522,11 @@ def test_optimize_from_the_menu_then_undo(server, browser):
         pg.wait_for_function("(() => { const bs = Object.values(S.books).filter(b => isCosplay(b.library)); return bs.length === 2 && bs.every(b => b.avif && b.canUndo); })()", timeout=15000)
         assert "Done" in pg.inner_text("#jobs")
         pg.locator(cos, has_text="Mirelle").first.click()
-        pg.wait_for_selector("#grid .card .avifpill")
+        pg.wait_for_selector("#grid .card .optmark")                   # optimized: a small ✨, not the AVIF pill
+        assert not pg.locator("#grid .card .avifpill").count()
+        native, optimized = pg.evaluate("[fmtPills({avif: true}), fmtPills({avif: true, optimized: true})]")
+        assert "avifpill" in native and "optmark" not in native               # AVIF from the start: the pill
+        assert "optmark" in optimized and "avifpill" not in optimized
         pg.go_back(); pg.wait_for_selector(cos)
         pg.locator(cos, has_text="Mirelle").first.click(button="right")
         pg.locator("#menu [data-mact=unoptimize]").click()

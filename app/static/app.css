@@ -918,6 +918,7 @@ body.booting .app{visibility:hidden}
 .cmpknob:focus-visible i{outline:3px solid var(--pop)}
 .cmphint{margin:0;padding:8px 16px;font-size:12px;color:var(--mute);text-align:center;border-top:1px solid var(--line)}
 .rawpill.avifpill{color:var(--mint)}
+.optmark{font-size:11px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
 /* the Jobs panel looks like the uploads panel */
 #jobs{position:fixed;right:18px;bottom:18px;z-index:74;width:360px;max-height:50vh;border-radius:18px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.8)}
 #jobs.on{display:flex;animation:popIn .25s var(--ease)}

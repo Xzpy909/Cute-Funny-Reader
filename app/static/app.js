@@ -387,7 +387,8 @@ function softBlur(d, w, h, radius) {
 const fmtPills = x => (x.raw ? '<span class="rawpill" title="Lossless images (PNG / BMP / TIFF)">RAW</span>' : '')
   + (x.jxl ? '<span class="rawpill" title="JPEG XL — converted to PNG when you open it">JPEG XL</span>' : '')
   + (x.heic ? '<span class="rawpill" title="HEIC / HEIF — converted to PNG when you open it">HEIC</span>' : '')
-  + (x.avif ? `<span class="rawpill avifpill" title="AVIF${x.optimized ? ' — optimized' : ''}">AVIF</span>` : '');
+  + (x.avif && !x.optimized ? '<span class="rawpill avifpill" title="AVIF — came this way">AVIF</span>' : '')
+  + (x.optimized ? '<span class="optmark" title="Optimized to AVIF with ✨ Optimize">✨</span>' : '');
 const coverBook = s => s.books.find(b => b.seriesCover) || s.books[0];
 const seriesCover = (s, w) => s.books.length ? coverImg(coverBook(s), w) : `<img src="${placeholderCover({ id: s.id, series: s.name })}" alt="" draggable="false">`;
 const saveSeriesPref = (sid, patch) => { seriesPrefs[sid] = { ...seriesPrefs[sid], ...patch }; local.set('cf-series', seriesPrefs); };
@@ -449,8 +450,8 @@ function buildSeries() {
     s.raw = s.books.every(b => b.raw);                 // every book lossless (PNG/BMP/TIFF) → RAW pill
     s.jxl = s.books.every(b => b.jxl);                 // every book JPEG XL → JPEG XL pill
     s.heic = s.books.every(b => b.heic);               // every book HEIC / HEIF → HEIC pill
-    s.avif = s.books.length > 0 && s.books.every(b => b.avif);   // every book AVIF (✨ Optimize) → AVIF pill
-    s.optimized = s.books.some(b => b.optimized);
+    s.optimized = s.books.some(b => b.optimized);                 // converted by ✨ Optimize → a small ✨
+    s.avif = s.books.length > 0 && s.books.every(b => b.avif) && !s.optimized;   // AVIF from the start → AVIF pill
     const uniq = arr => [...new Map(arr.map(t => [t.toLowerCase(), t])).values()];
     s.genres = uniq(s.books.flatMap(b => b.genres || []));
     // series tags = what every *tagged* chapter has (untagged chapters = "no info", they don't veto anything);
@@ -760,7 +761,7 @@ function renderHome() {
     const unread = s.books.length ? newCount(s) : 0;
     const bubble = unread && !one ? `<span class="ubub" title="${plural(unread, 'chapter')} not started yet"><i></i><b>${unread > 99 ? '99+' : unread}</b> new</span>` : '';
     return `<button class="card ${seriesTrashed(s) ? 'trashed' : unread ? 'unread' : ''} ${selOn && S.sel.has(s.id) ? 'sel' : ''}" data-series="${s.id}" ${one ? `data-single="${b0.id}"` : ''} style="--d:${Math.min(k + cols.length, 20) * 30}ms">
-      <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || s.avif || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
+      <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || s.avif || s.optimized || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
       <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
       <div class="ct" ${one && b0.title && normQ(b0.title) !== normQ(s.name) ? `title="${esc(b0.title)}"` : ''}>${esc(s.name)}</div>
       <div class="cm">${one ? progressText(b0) : countLabel(s)}${s.author ? ` · <span class="au">${esc(s.author)}</span>` : ''}${!one && i.unread && i.unread < s.books.length ? ` · ${i.unread} unread` : ''}${flat && s.collectionId ? ` · 🗂️ ${esc(S.colById[s.collectionId]?.name || '')}` : ''}</div>${cardTags(s)}
@@ -923,7 +924,7 @@ function hitCard(b, k) {
   const s = S.seriesById[b.seriesId], cos = isCosplay(b.library);
   const glow = bookGlow(b, cos);
   return `<button class="card ch hit ${isDone(b) ? 'done' : ''} ${b.trashed ? 'trashed' : glow}" data-open="${b.id}" style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}<span class="badge fmt">${cos ? V(b.library).b.toUpperCase() : b.kind === 'volume' ? 'VOLUME' : 'CHAPTER'}</span>${b.raw || b.jxl || b.heic || b.avif ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
+    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}<span class="badge fmt">${cos ? V(b.library).b.toUpperCase() : b.kind === 'volume' ? 'VOLUME' : 'CHAPTER'}</span>${b.raw || b.jxl || b.heic || b.avif || b.optimized ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(bookFrac(b) * 100)}%"></i></div>
     <div class="ct">${escWrap(s && s.books.length > 1 ? b.label + (b.title ? ' · ' + b.title : '') : b.title || b.label)}</div>
     <div class="cm">in ${esc(s?.name || b.series)}</div>
@@ -2730,7 +2731,7 @@ function favCount(f) {
 function favSeriesCard(s, k) {
   const i = seriesInfo(s), one = s.books.length === 1;
   return `<button class="card ${seriesTrashed(s) ? 'trashed' : newCount(s) && !one ? 'unread' : ''}" data-series="${s.id}" ${one ? `data-single="${s.books[0].id}"` : ''} style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${seriesCover(s, 320)}${i.unread === 0 ? '<span class="badge done">READ</span>' : ''}${s.raw || s.jxl || s.heic || s.avif ? `<div class="blc">${fmtPills(s)}</div>` : ''}</div>
+    <div class="cover">${seriesCover(s, 320)}${i.unread === 0 ? '<span class="badge done">READ</span>' : ''}${s.raw || s.jxl || s.heic || s.avif || s.optimized ? `<div class="blc">${fmtPills(s)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
     <div class="ct">${escWrap(s.name)}</div>
     <div class="cm">${one ? progressText(s.books[0]) : countLabel(s)} · ${esc(libName(s.library))}</div>
@@ -2739,7 +2740,7 @@ function favSeriesCard(s, k) {
 function favSetCard(b, k) {
   const glow = bookGlow(b, true);                                   // favourited sets: always Cosplay
   return `<button class="card ch ${isDone(b) ? 'done' : ''} ${b.trashed ? 'trashed' : glow}" data-open="${b.id}" style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}${b.format === 'video' ? '<span class="badge fmt">▶ VIDEO</span>' : ''}${b.raw || b.jxl || b.heic || b.avif ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
+    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}${b.format === 'video' ? '<span class="badge fmt">▶ VIDEO</span>' : ''}${b.raw || b.jxl || b.heic || b.avif || b.optimized ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(bookFrac(b) * 100)}%"></i></div>
     <div class="ct">${escWrap(b.label)}</div>
     <div class="cm">📸 ${esc(S.seriesById[b.seriesId]?.name || b.series)}</div>
