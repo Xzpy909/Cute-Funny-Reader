@@ -1,0 +1,14 @@
+# runtime data — never committed: accounts, secret key, reading progress, index, cache
+config/
+# the library itself (your comics / photos)
+Data/
+# Python
+__pycache__/
+*.pyc
+# OS / upload leftovers
+.DS_Store
+Thumbs.db
+desktop.ini
+*.part
+# local backups made by backup.bat (they hold your accounts and progress)
+backups/

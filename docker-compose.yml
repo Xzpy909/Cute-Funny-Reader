@@ -1,0 +1,14 @@
+services:
+  reader:
+    build: .
+    image: cute-funny-reader:latest
+    container_name: cute-funny-reader-dev
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./Data:/data           # library folders live here (must be writable for drag & drop uploads)
+      - ./config:/config       # index, reading progress, thumbnail & panel cache
+    environment:
+      - SCAN_INTERVAL=600      # seconds between automatic library rescans
+      - JXL_CACHE_DAYS=7       # JPEG XL books converted to PNG are kept this long after their last read
+    restart: unless-stopped

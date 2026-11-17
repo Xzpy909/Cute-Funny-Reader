@@ -1,0 +1,9 @@
+# Dev mode (start with dev.bat): the container runs the code straight from ./app, so a change shows up
+# after a browser refresh — no rebuild. Server-side (.py) changes restart the server by themselves.
+# update.bat switches back to the normal, self-contained build.
+services:
+  reader:
+    volumes:
+      - ./app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9001", "--proxy-headers",
+              "--forwarded-allow-ips", "*", "--reload", "--reload-dir", "/app/app"]

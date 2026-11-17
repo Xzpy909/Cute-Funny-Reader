@@ -1,0 +1,8 @@
+Data
+config
+design
+**/__pycache__
+*.pyc
+backups
+tests
+pytest.ini

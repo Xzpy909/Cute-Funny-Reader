@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c0b10">
+<title>Cute&amp;Funny Reader</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='11' fill='%23ff5c8a'/%3E%3Cellipse cx='20' cy='23' rx='12.5' ry='11' fill='%23ffd84d' stroke='%2315131a' stroke-width='2.2'/%3E%3Ccircle cx='15.5' cy='21' r='2.3' fill='%2315131a'/%3E%3Ccircle cx='24.5' cy='21' r='2.3' fill='%2315131a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ======================= LIBRARY ======================= -->
+<div class="app">
+  <aside class="side">
+    <a class="brand" href="#/" style="color:inherit;text-decoration:none">
+      <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><rect width="40" height="40" rx="11" fill="#ff5c8a"/><ellipse cx="20" cy="23" rx="12.5" ry="11" fill="#ffd84d" stroke="#15131a" stroke-width="2.2"/><circle cx="15.5" cy="21" r="2.3" fill="#15131a"/><circle cx="24.5" cy="21" r="2.3" fill="#15131a"/><ellipse cx="12" cy="25.5" rx="2" ry="1.2" fill="#ff8fb0"/><ellipse cx="28" cy="25.5" rx="2" ry="1.2" fill="#ff8fb0"/><path d="M17 26q3 2.6 6 0" stroke="#15131a" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      <div><b>Cute<em>&amp;</em>Funny</b><small>READER</small></div>
+    </a>
+    <nav class="nav" id="mainNav">
+      <button data-nav="home" data-ico="home">Home</button>
+      <button data-nav="reading" data-ico="clock">Continue <span class="count" id="nReading"></span></button>
+      <button data-nav="unread" data-ico="grid">Unread <span class="count" id="nUnread"></span></button>
+      <button data-nav="done" data-ico="check">Finished <span class="count" id="nDone"></span></button>
+      <button data-nav="favs" data-ico="heart">Favourites <span class="count" id="nFavs"></span></button>
+    </nav>
+    <div>
+      <div class="label">Libraries</div>
+      <nav class="nav" id="libNav"></nav>
+      <button class="addlib" id="btnAddLib"><span class="plus">+</span>Add library</button>
+    </div>
+    <div class="acct" id="acct"></div>
+    <div class="server" id="server">
+      <div class="st"><span class="dot"></span><span id="srvState">Connecting…</span></div>
+      <code id="srvBooks"></code>
+      <code id="srvScan"></code>
+      <button class="rescan" id="btnRescan"><span data-ico="refresh"></span>Rescan library</button>
+    </div>
+  </aside>
+  <div class="sideshade" id="sideShade"></div>
+
+  <main class="main" id="main">
+    <div class="top" id="topBar">
+      <div class="top-l"><button class="ib sidebtn" id="btnSide" data-ico="menu" aria-label="Libraries"></button></div>
+      <label class="search"><span data-ico="search"></span><input id="q" placeholder="Search series, authors, tags…" autocomplete="off" aria-label="Search">
+        <button type="button" class="scope" id="btnScope" aria-haspopup="menu" aria-label="Where to search"><span id="scopeName">Everything</span><span data-ico="chevD"></span></button><kbd>/</kbd></label>
+      <div class="top-r">
+        <button type="button" class="addbtn" id="btnTopAdd" aria-haspopup="menu"><span data-ico="upload"></span><b>Add</b></button>
+        <button class="ib setbtn" id="btnSettings" data-ico="gear" title="Settings" aria-label="Settings"></button>
+      </div>
+    </div>
+    <div class="topmenu" id="topMenu" role="menu"></div>
+
+    <section class="view on" id="viewHome">
+      <section id="welcome"></section>
+      <div id="homeBody">
+      <div class="greet" id="greet"></div>
+      <div id="banner"></div>
+      <section class="hero" id="hero"><div class="skel" style="grid-column:1/-1"></div></section>
+      <div id="colCrumb"></div>
+      <div class="shelf-h">
+        <div><h2 id="shelfTitle">Your shelf</h2><p id="stats"></p></div>
+        <div class="shelf-actions">
+          <span id="libActions"></span>
+          <select class="sort" id="sort">
+            <option value="recent">Recently read</option>
+            <option value="added">Recently added</option>
+            <option value="title">Title A–Z</option>
+          </select>
+        </div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div id="rows"></div>
+      <div class="grid" id="grid"></div>
+      </div>
+    </section>
+
+    <section class="view" id="viewSeries"></section>
+    <section class="view" id="viewFavs"></section>
+  </main>
+</div>
+
+<!-- ======================= LIBRARY MODAL / DROP / UPLOADS ======================= -->
+<div class="overlay fixed" id="libModal"><form class="sheet libform" id="libForm" autocomplete="off"></form></div>
+<div class="auth" id="auth" hidden></div>
+<div class="overlay fixed" id="pwModal"><form class="sheet libform" id="pwForm" autocomplete="on"></form></div>
+<div class="overlay fixed" id="accModal"><div class="sheet libform accform" id="accBox"></div></div>
+<div class="overlay fixed" id="detModal"><form class="sheet libform detform" id="detForm" autocomplete="off"></form></div>
+<div id="drop"><div class="drop-inner"><div class="drop-icon">⇣</div><div class="drop-title" id="dropTitle"></div><div class="drop-sub" id="dropSub"></div><div class="drop-tiles" id="dropTiles"></div></div></div>
+<div id="uploads" class="glass"></div>
+<div class="overlay fixed" id="serModal"><form class="sheet libform" id="serForm" autocomplete="off"></form></div>
+<div id="selbar" class="glass"></div>
+<div id="menuShade"></div>
+<div id="menu" class="glass" role="menu"></div>
+<div id="apptoast" class="glass"></div>
+<input type="file" id="filePick" multiple accept=".cbz,.zip,.cb7,.cbr,.epub,.rar,.7z,.jxl,.heic,.heif,image/*,video/*,.mkv" hidden>
+
+<!-- ======================= READER ======================= -->
+<div class="reader" id="reader" data-bg="ink" data-kind="images">
+  <div id="ambient"></div>
+  <div class="stage" id="stage"></div>
+
+  <div class="chrome rtop glass">
+    <button class="ib" id="btnBack" data-ico="chevL" data-tip="Back (Esc)"></button>
+    <div class="rt"><div class="rt-title" id="rTitle"></div><div class="rt-sub" id="rSub"></div></div>
+    <div class="grow"></div>
+    <div class="seg img-only" id="modeSeg">
+      <button data-mode="single">Single</button><button data-mode="spread">Spread</button><button data-mode="webtoon">Scroll</button>
+    </div>
+    <span class="sep img-only"></span>
+    <button class="ib img-only" id="btnGuided" data-ico="guided" data-tip="Guided panels (G)"></button>
+    <button class="ib img-only" id="btnFit" data-tip="Fit width / height (W)"></button>
+    <button class="ib txt img-only" id="btnDir" data-tip="Reading direction (R)">LTR</button>
+    <button class="ib img-only" id="btnZoom" data-ico="zoom" data-tip="Zoom (Z / dbl-click)"></button>
+    <button class="ib text-only" id="btnToc" data-ico="toc" data-tip="Contents (C)"></button>
+    <span class="sep"></span>
+    <button class="ib tr" id="btnSettings" data-ico="sliders" data-tip="Display"></button>
+    <button class="ib tr" id="btnHelp" data-ico="help" data-tip="Shortcuts (?)"></button>
+    <button class="ib tr" id="btnFS" data-ico="expand" data-tip="Fullscreen (F)"></button>
+  </div>
+
+  <div class="pop glass" id="settings">
+    <div class="pop-h">Display</div>
+    <div class="row"><span>Backdrop</span><div class="seg" id="bgSeg"><button data-bg="ink">Ink</button><button data-bg="gray">Slate</button><button data-bg="paper">Paper</button></div></div>
+    <div class="row img-only"><span>Ambient glow</span><button class="switch" id="swAmbient" aria-label="Ambient glow"></button></div>
+    <div class="row img-only"><span>Page animation</span><button class="switch" id="swAnim" aria-label="Page animation"></button></div>
+    <div class="row img-only"><span>Magnifier</span><span class="hint">hold <kbd>Shift</kbd> over a page</span></div>
+    <div class="row text-only"><span>Text size</span><div class="stepper"><button id="fsDown">A−</button><output id="fsVal"></output><button id="fsUp">A+</button></div></div>
+    <div class="row text-only"><span>Typeface</span><div class="seg" id="fontSeg"><button data-font="serif">Serif</button><button data-font="sans">Sans</button></div></div>
+    <div class="row text-only"><span>Line width</span><div class="seg" id="widthSeg"><button data-w="34em">Narrow</button><button data-w="40em">Normal</button><button data-w="52em">Wide</button></div></div>
+    <div class="row text-only"><span>Spacing</span><div class="seg" id="lhSeg"><button data-lh="1.5">Tight</button><button data-lh="1.75">Normal</button><button data-lh="2">Airy</button></div></div>
+  </div>
+
+  <div class="pop glass toc" id="toc"></div>
+
+  <div class="chrome rbottom glass" id="bottom">
+    <div class="film img-only" id="film"></div>
+    <div class="scrub">
+      <button class="ib" id="btnPrev" data-ico="chevL"></button>
+      <span class="pagelabel" id="pageLabel"></span>
+      <div class="slwrap" id="slwrap">
+        <input type="range" id="slider" min="0" value="0" step="1" aria-label="Position">
+        <div class="peek glass" id="peek"><img alt=""><span></span></div>
+      </div>
+      <div class="vbarx" id="vseekwrap">
+        <span class="vtime" id="vcur">0:00</span>
+        <input type="range" class="vseek" id="vseek" min="0" max="1000" value="0" aria-label="Seek">
+        <span class="vtime" id="vdur">0:00</span>
+      </div>
+      <div class="vvolwrap vbarx"><button class="ib" id="vvolbtn" title="Volume (↑ ↓ · M to mute)"></button>
+        <div class="vvol glass" id="vvol"><span id="vvolv"></span><input type="range" id="vvolr" min="0" max="100" aria-label="Volume"></div></div>
+      <span class="chip-panel" id="panelChip"></span>
+      <button class="ib img-only" id="btnFilm" data-ico="film" data-tip="Thumbnails (T)"></button>
+      <button class="ib" id="btnNext" data-ico="chevR"></button>
+    </div>
+  </div>
+
+  <div class="overlay" id="help"><div class="sheet">
+    <h3>Keyboard shortcuts</h3>
+    <div class="keys">
+      <div><span>Next / previous</span><span><kbd>→</kbd><kbd>←</kbd></span></div>
+      <div><span>First / last</span><span><kbd>Home</kbd><kbd>End</kbd></span></div>
+      <div><span>Single · Spread · Scroll</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span></div>
+      <div><span>Guided panel view</span><span><kbd>G</kbd></span></div>
+      <div><span>Fit width / height</span><span><kbd>W</kbd></span></div>
+      <div><span>Right-to-left (manga)</span><span><kbd>R</kbd></span></div>
+      <div><span>Zoom · drag to pan</span><span><kbd>Z</kbd></span></div>
+      <div><span>Magnifier</span><span><kbd>Shift</kbd></span></div>
+      <div><span>Thumbnails · Contents</span><span><kbd>T</kbd><kbd>C</kbd></span></div>
+      <div><span>Text size (books)</span><span><kbd>+</kbd><kbd>−</kbd></span></div>
+      <div><span>Fullscreen · hide UI</span><span><kbd>F</kbd><kbd>H</kbd></span></div>
+      <div><span>Back</span><span><kbd>Esc</kbd></span></div>
+    </div>
+  </div></div>
+
+  <div class="overlay" id="endcard"><div class="sheet end" id="endInner"></div></div>
+  <div class="overlay" id="lightbox"><img alt=""></div>
+  <div id="loupe"></div>
+  <div id="toast" class="glass"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

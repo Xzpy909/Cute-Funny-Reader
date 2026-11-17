@@ -1,0 +1,29 @@
+Do first (cheap, protects everything else)
+
+Put the project in git. It isn’t a repository, and the one backup folder I made vanished mid-session. Every change today was unrecoverable.
+
+Add a dev mode that mounts ./app with auto-reload. Every edit currently needs an image rebuild, which is what caused the stale-tab confusion.
+
+Turn today’s throwaway checks into a real test suite. The naming, grouping, tag, move and favourites rules are intricate and already interact. I tested each one by hand and discarded the test.
+
+Pin dependency versions in requirements.txt.
+
+Speed, in order of likely impact
+
+Replace the JSON files with SQLite. Every progress save rewrites the whole file. Renaming a collection rewrites progress.json about twice per book, which is probably the server half of your 677-series slowdown. Series lookups also scan every book each time.
+Stop re-rendering the whole library. Every change refetches all books and rebuilds every card. Render the grid incrementally and refetch only when the library revision changes.
+Make scans incremental. Every edit, move or upload triggers a full walk of /data. A folder check also walks everything every 4 seconds, and the status poll touches the disk every 8 seconds. The per-folder timestamps already collected could limit rescans to changed folders.
+Fix first-open of a book. The server reads every page in full just to get its dimensions. Reading headers only, or doing it in the background, would fix that.
+Stop rewriting whole archives for a tag or cover edit. Keep edits in the database and write them into files only on request.
+Pack dropped folders on the server. The browser currently loads every photo into memory to build the .cbz, which is heavy for 6000 px sets.
+Clean-up
+Split the big files. app.js is one ~200 KB file with global state and one giant click handler. library.py mixes parsing, scanning, file moves, caches and transcoding. The CSS is hand-minified one-liners.
+Keep the name-parsing rules in one place. They exist in both JavaScript and Python and have already drifted (the Name Ch.1 bug). The server should plan uploads, with the browser only showing the plan.
+Remove leftovers from today: jxl_* functions that now also handle HEIC, the dead .hero-bg rule, and the window.fetch patch behind the working pill.
+What I’d redesign
+Stable book IDs. IDs come from the file path, so every rename or move needs progress carrying, favourites healing and cover flags. This is the root of several of today’s bugs. A full re-read also resets “date added”.
+One background job system with live progress. Scans, transcoding, big renames, deletes and the planned Optimize feature would share it. It replaces polling and makes the working pill show real progress.
+One “review upload” sheet instead of stacked dialogs. Show what will be created, with stray images and archives as toggles.
+A trash instead of permanent delete.
+Library-type vocabulary in one place. Cosplay still leaks “series” and “Chapter 2”, which I flagged earlier.
+Per-series view settings on the server. They live in each browser now, so they don’t follow you to your phone.
