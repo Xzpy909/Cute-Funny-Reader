@@ -24,13 +24,15 @@ from fastapi.responses import JSONResponse
 
 from .auth import COOKIE, SESSION_DAYS, Accounts
 from .store import Db, Store
-from .library import cosplay_plan as lib_cosplay_plan, COL_MARK, CONFIG_DIR, LIB_ROOT, safe_component, MEDIA_EXT, REPACK_EXT, REPACK_KIND, VIDEO_EXT, Library, is_heic, is_jxl, is_rar, needs_transcode, is_raw, is_video, repack_to_cbz
+from .library import cosplay_plan as lib_cosplay_plan, COL_MARK, CONFIG_DIR, LIB_ROOT, safe_component, MEDIA_EXT, REPACK_EXT, REPACK_KIND, VIDEO_EXT, Library, is_avif, is_heic, is_jxl, is_rar, needs_transcode, is_raw, is_video, repack_to_cbz
 
 __version__ = "1.7.3"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("cfreader")
 
 lib = Library()
+from .optimize import Optimizer  # noqa: E402
+opt = Optimizer(lib)
 accounts = Accounts(CONFIG_DIR)
 favs = Store(Db.at(CONFIG_DIR / "reader.db"), "favorites", CONFIG_DIR / "favorites.json")      # {account id: [list, …]} — references only, never files
 lib.accounts = accounts
@@ -62,6 +64,7 @@ CACHE = "public, max-age=604800"
 async def lifespan(_app):
     threading.Thread(target=lib.watch_loop, name="scanner", daemon=True).start()
     threading.Thread(target=lib.prep_loop, name="prepare", daemon=True).start()
+    threading.Thread(target=opt.loop, name="optimize", daemon=True).start()
     yield
 
 
@@ -84,6 +87,9 @@ def public(b: dict) -> dict:
     out["jxl"] = is_jxl(b)
     out["heic"] = is_heic(b)
     out["transcode"] = needs_transcode(b)
+    out["avif"] = is_avif(b)
+    out["optimized"] = bool(opt.kept.get(b["id"]))                  # converted by ✨ Optimize
+    out["canUndo"] = opt.can_undo(b["id"])                           # … and its original is still kept
     return out
 
 
@@ -676,6 +682,117 @@ def page(bid: str, n: int, request: Request, max: int | None = None):
             return cached(request, f"{bid}-{b['mtime']}-{n}-m{max}", *small)
     data, mime = lib.page(b, n)
     return cached(request, f"{bid}-{b['mtime']}-{n}", data, mime)
+
+
+# ---- ✨ Optimize (AVIF)
+def _selected(body: dict) -> list[dict]:
+    """{books: [...], series: [...], collections: [...]} → the signed-in account's books in it."""
+    out, seen = [], set()
+    def add(b):
+        if b["id"] not in seen:
+            seen.add(b["id"]); out.append(b)
+    for bid in body.get("books") or []:
+        add(book_or_404(bid))
+    for sid in body.get("series") or []:
+        own_series(sid)
+        for b in sorted(lib.series_books(sid), key=lambda b: (b.get("number") is None, b.get("number") or 0, b["file"])):
+            add(b)
+    for cid in body.get("collections") or []:
+        own_collection(cid)
+        try:
+            _, folder = lib.find_collection(cid)
+        except KeyError:
+            raise HTTPException(404, "collection not found")
+        pre = folder.relative_to(LIB_ROOT).as_posix() + "/"
+        for b in sorted((b for b in lib.books.values() if b["rel"].startswith(pre)), key=lambda b: b["rel"]):
+            add(b)
+    if not out:
+        raise HTTPException(400, "Nothing selected")
+    return out
+
+
+@app.get("/api/optimize/presets")
+def optimize_presets():
+    from .optimize import KEEP_DAYS
+    presets, placeholder = opt.presets()
+    return {"presets": presets, "placeholder": placeholder, "keepDays": KEEP_DAYS}
+
+
+@app.post("/api/optimize/estimate")
+def optimize_estimate(body: dict = Body(...)):
+    books = _selected(body)
+    try:
+        preset = opt.preset(body.get("preset") or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    e = opt.estimate(books, preset, int(body.get("maxEdge") or 0))
+    reasons = {}
+    for b in books:
+        why = opt.why_not(b)
+        if why:
+            reasons[why] = reasons.get(why, 0) + 1
+    raw = sum(1 for b in books if is_raw(b) and not opt.why_not(b))
+    sample = next(((b, n) for b, n in opt.sample_pages([b for b in books if not opt.why_not(b)], 1)), None)
+    return {**e, "why": reasons, "raw": raw,
+            "sample": {"book": sample[0]["id"], "page": sample[1]} if sample else None}
+
+
+@app.get("/api/books/{bid}/pages/{n}/optimized")
+def optimize_compare(bid: str, n: int, request: Request, preset: str, max: int = 0):
+    """One page as the chosen preset would make it — for the before / after view."""
+    b = book_or_404(bid)
+    if b.get("format") != "images" or not 0 <= n < len(b["entries"]):
+        raise HTTPException(404)
+    try:
+        orig, new = opt.encode_sample(b, n, opt.preset(preset), max)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    r = cached(request, f"opt-{bid}-{b['mtime']}-{n}-{preset}-{max}", new, "image/avif" if new != orig else mimetypes.guess_type(b["entries"][n])[0] or "image/jpeg")
+    r.headers["X-Before"], r.headers["X-After"] = str(len(orig)), str(len(new))
+    r.headers["Access-Control-Expose-Headers"] = "X-Before, X-After"
+    return r
+
+
+@app.post("/api/optimize")
+def optimize_start(body: dict = Body(...)):
+    books = _selected(body)
+    try:
+        return opt.start(me()["id"], books, body.get("preset") or "", bool(body.get("keep", True)),
+                         int(body.get("maxEdge") or 0), str(body.get("title") or "")[:200])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/optimize/undo")
+def optimize_undo(body: dict = Body(...)):
+    books = [b for b in _selected(body) if opt.can_undo(b["id"])]
+    if not books:
+        raise HTTPException(400, "There's no kept original to go back to")
+    failed = []
+    for b in books:
+        try:
+            opt.undo(b["id"])
+        except (OSError, ValueError, KeyError) as e:
+            failed.append(f"{b['file']}: {e}")
+    if failed:
+        raise HTTPException(409, "Couldn’t restore: " + "; ".join(failed[:3]))
+    return {"restored": len(books)}
+
+
+@app.get("/api/jobs")
+def jobs_list():
+    return {"jobs": opt.list(me()["id"])}
+
+
+@app.post("/api/jobs/{jid}/{action}")
+def jobs_control(jid: str, action: str):
+    if action not in ("pause", "resume", "cancel", "dismiss"):
+        raise HTTPException(400, "Unknown action")
+    try:
+        opt.control(me()["id"], jid, action)
+    except KeyError:
+        raise HTTPException(404, "job not found")
+    return {"ok": True}
 
 
 @app.post("/api/books/{bid}/transcode")

@@ -652,6 +652,11 @@ def is_heic(b: dict) -> bool:
     return _mostly(b, HEIC_EXT)
 
 
+def is_avif(b: dict) -> bool:
+    """A book whose photos are (nearly all) AVIF — optimized, or uploaded that way → the AVIF pill."""
+    return _mostly(b, (".avif",))
+
+
 def needs_transcode(b: dict) -> bool:
     return b.get("format") == "images" and any(n.lower().endswith(TRANSCODE_EXT) for n in b.get("entries") or [])
 
