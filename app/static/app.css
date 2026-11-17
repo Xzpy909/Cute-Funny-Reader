@@ -885,6 +885,12 @@ body.booting .app{visibility:hidden}
 .optnew{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 14px;border-radius:14px;border:1px dashed var(--line)}
 .optnew input{height:34px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 10px;font:600 13.5px inherit}
 .optnew #optNewName{flex:1;min-width:160px;font-family:inherit}
+.optadv{flex-basis:100%;display:flex;flex-direction:column;gap:8px}
+.optadv summary{cursor:pointer;font:600 13px inherit;color:var(--mute);width:max-content}
+.optadv[open] summary{margin-bottom:2px}
+.optadv>label{display:flex;align-items:center;gap:10px;font-size:13.5px}
+.optadv select{height:34px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 8px;font:600 13px inherit;flex:1;min-width:0}
+.optnew input:disabled,.optadv select:disabled{opacity:.45}
 .optnew label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#cfcad8}
 .optnew label input{width:64px;font-family:var(--mono)}
 .optnew small{flex-basis:100%;font-size:11.5px;color:var(--mute);font-weight:500}

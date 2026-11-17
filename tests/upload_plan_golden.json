@@ -1,0 +1,872 @@
+[
+ {
+  "drop": "images folder",
+  "items": [
+   {
+    "path": "Starfall Ch.1/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall Ch.1/002.jpg",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Starfall Ch.1.cbz",
+    "images": [
+     0,
+     1
+    ],
+    "extras": [],
+    "folder": "Starfall Ch.1"
+   }
+  ]
+ },
+ {
+  "drop": "chapters as subfolders",
+  "items": [
+   {
+    "path": "Starfall/Ch 1/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall/Ch 2/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall/Ch 10/001.jpg",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Ch 1.cbz",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Ch 2.cbz",
+    "images": [
+     1
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Ch 10.cbz",
+    "images": [
+     2
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   }
+  ]
+ },
+ {
+  "drop": "numbered archives",
+  "items": [
+   {
+    "path": "Starfall/Starfall 01.cbz",
+    "size": 100
+   },
+   {
+    "path": "Starfall/Starfall 02.cbz",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Starfall 01.cbz",
+    "file": 0,
+    "folder": "Starfall"
+   },
+   {
+    "kind": "file",
+    "name": "Starfall 02.cbz",
+    "file": 1,
+    "folder": "Starfall"
+   }
+  ]
+ },
+ {
+  "drop": "unrelated archives",
+  "items": [
+   {
+    "path": "Mixed/Alpha.cbz",
+    "size": 100
+   },
+   {
+    "path": "Mixed/Beta 01.cbz",
+    "size": 100
+   },
+   {
+    "path": "Mixed/Gamma.cbz",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Alpha.cbz",
+    "file": 0,
+    "collection": "Mixed"
+   },
+   {
+    "kind": "file",
+    "name": "Beta 01.cbz",
+    "file": 1,
+    "collection": "Mixed"
+   },
+   {
+    "kind": "file",
+    "name": "Gamma.cbz",
+    "file": 2,
+    "collection": "Mixed"
+   }
+  ]
+ },
+ {
+  "drop": "shelf of series",
+  "items": [
+   {
+    "path": "Shelf/Starfall/Starfall 01.cbz",
+    "size": 100
+   },
+   {
+    "path": "Shelf/Starfall/Starfall 02.cbz",
+    "size": 100
+   },
+   {
+    "path": "Shelf/Moonforge/001.jpg",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Moonforge.cbz",
+    "images": [
+     2
+    ],
+    "extras": [],
+    "collection": "Shelf",
+    "folder": "Moonforge"
+   },
+   {
+    "kind": "file",
+    "name": "Starfall 01.cbz",
+    "file": 0,
+    "collection": "Shelf",
+    "folder": "Starfall"
+   },
+   {
+    "kind": "file",
+    "name": "Starfall 02.cbz",
+    "file": 1,
+    "collection": "Shelf",
+    "folder": "Starfall"
+   }
+  ]
+ },
+ {
+  "drop": "side by side",
+  "items": [
+   {
+    "path": "Starfall 1/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall 2/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Other/001.jpg",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Starfall.cbz",
+    "images": [
+     2
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Starfall 1.cbz",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Starfall 2.cbz",
+    "images": [
+     1
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Other.cbz",
+    "images": [
+     3
+    ],
+    "extras": [],
+    "folder": "Other"
+   }
+  ]
+ },
+ {
+  "drop": "loose images",
+  "items": [
+   {
+    "path": "002.jpg",
+    "size": 100
+   },
+   {
+    "path": "001.jpg",
+    "size": 100
+   },
+   {
+    "path": "010.jpg",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Images 2026-01-01.cbz",
+    "images": [
+     1,
+     0,
+     2
+    ],
+    "extras": [],
+    "folder": "Images 2026-01-01"
+   }
+  ]
+ },
+ {
+  "drop": "loose archives",
+  "items": [
+   {
+    "path": "Starfall 01.cbz",
+    "size": 100
+   },
+   {
+    "path": "Moonforge.epub",
+    "size": 100
+   },
+   {
+    "path": "x.txt",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Moonforge.epub",
+    "file": 1
+   },
+   {
+    "kind": "file",
+    "name": "Starfall 01.cbz",
+    "file": 0
+   }
+  ]
+ },
+ {
+  "drop": "metadata",
+  "items": [
+   {
+    "path": "scan_0042/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "scan_0042/002.jpg",
+    "size": 100
+   },
+   {
+    "path": "scan_0042/metadata.json",
+    "size": 100
+   },
+   {
+    "path": "raw_07/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "raw_07/ComicInfo.xml",
+    "size": 100
+   },
+   {
+    "path": "plain/001.jpg",
+    "size": 100
+   }
+  ],
+  "meta": {
+   "2": "{\"title\": \"Starfall Side Story\", \"tags\": [\"x\"]}",
+   "4": "<ComicInfo><Series>Moonforge</Series><Number>7</Number></ComicInfo>"
+  },
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Starfall Side Story.cbz",
+    "images": [
+     0,
+     1
+    ],
+    "extras": [
+     2
+    ],
+    "folder": "Starfall Side Story"
+   },
+   {
+    "kind": "pack",
+    "name": "Moonforge 7.cbz",
+    "images": [
+     3
+    ],
+    "extras": [
+     4
+    ],
+    "folder": "Moonforge"
+   },
+   {
+    "kind": "pack",
+    "name": "plain.cbz",
+    "images": [
+     5
+    ],
+    "extras": [],
+    "folder": "plain"
+   }
+  ]
+ },
+ {
+  "drop": "Ch.N folders",
+  "items": [
+   {
+    "path": "Starfall Ch.1/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall Ch.2/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall Ch.10/001.jpg",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Starfall Ch.1.cbz",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Starfall Ch.2.cbz",
+    "images": [
+     1
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Starfall Ch.10.cbz",
+    "images": [
+     2
+    ],
+    "extras": [],
+    "folder": "Starfall"
+   }
+  ]
+ },
+ {
+  "drop": "part 2",
+  "items": [
+   {
+    "path": "Starfall/Starfall.cbz",
+    "size": 100
+   },
+   {
+    "path": "Starfall/Starfall - Part 2.cbz",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Starfall - Part 2.cbz",
+    "file": 1,
+    "folder": "Starfall"
+   },
+   {
+    "kind": "file",
+    "name": "Starfall.cbz",
+    "file": 0,
+    "folder": "Starfall"
+   }
+  ]
+ },
+ {
+  "drop": "onto a series",
+  "items": [
+   {
+    "path": "001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Extra/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Starfall 03.cbz",
+    "size": 100
+   }
+  ],
+  "series": "sid123",
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Starfall 03.cbz",
+    "file": 2,
+    "series": "sid123"
+   },
+   {
+    "kind": "pack",
+    "name": "Chapter 2026-01-01.cbz",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "series": "sid123"
+   },
+   {
+    "kind": "pack",
+    "name": "Extra.cbz",
+    "images": [
+     1
+    ],
+    "extras": [],
+    "series": "sid123"
+   }
+  ]
+ },
+ {
+  "drop": "into a collection",
+  "items": [
+   {
+    "path": "Starfall/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Moonforge 01.cbz",
+    "size": 100
+   }
+  ],
+  "collection": "Shelf",
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Moonforge 01.cbz",
+    "file": 1,
+    "collection": "Shelf"
+   },
+   {
+    "kind": "pack",
+    "name": "Starfall.cbz",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "collection": "Shelf",
+    "folder": "Starfall"
+   }
+  ]
+ },
+ {
+  "drop": "videos",
+  "items": [
+   {
+    "path": "Clip set/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Clip set/002.mp4",
+    "size": 100
+   },
+   {
+    "path": "Only clips/a.mp4",
+    "size": 100
+   },
+   {
+    "path": "Only clips/b.mkv",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Clip set.cbz",
+    "images": [
+     0,
+     1
+    ],
+    "extras": [],
+    "folder": "Clip set"
+   },
+   {
+    "kind": "file",
+    "name": "a.mp4",
+    "file": 2,
+    "collection": "Only clips"
+   },
+   {
+    "kind": "file",
+    "name": "b.mkv",
+    "file": 3,
+    "collection": "Only clips"
+   }
+  ]
+ },
+ {
+  "drop": "nested shelf",
+  "items": [
+   {
+    "path": "Shelf/Starfall/Ch 1/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Shelf/Starfall/Ch 2/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Shelf/Moonforge 01.cbz",
+    "size": 100
+   },
+   {
+    "path": "Shelf/Moonforge 02.cbz",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Moonforge 01.cbz",
+    "file": 2,
+    "collection": "Shelf"
+   },
+   {
+    "kind": "file",
+    "name": "Moonforge 02.cbz",
+    "file": 3,
+    "collection": "Shelf"
+   },
+   {
+    "kind": "pack",
+    "name": "Ch 1.cbz",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "collection": "Shelf",
+    "folder": "Starfall"
+   },
+   {
+    "kind": "pack",
+    "name": "Ch 2.cbz",
+    "images": [
+     1
+    ],
+    "extras": [],
+    "collection": "Shelf",
+    "folder": "Starfall"
+   }
+  ]
+ },
+ {
+  "drop": "cos: variants",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "Mirelle/Starfall Bunny Normal/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Mirelle/Starfall Bunny Bonus/001.jpg",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Starfall Bunny Bonus.zip",
+    "images": [
+     1
+    ],
+    "extras": [],
+    "collection": "Mirelle",
+    "folder": "Starfall Bunny"
+   },
+   {
+    "kind": "pack",
+    "name": "Starfall Bunny Normal.zip",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "collection": "Mirelle",
+    "folder": "Starfall Bunny"
+   }
+  ]
+ },
+ {
+  "drop": "cos: baseline name",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "[Lumen Studio] Mirelle - Starfall Bunny - Bonus/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "[Lumen Studio] Mirelle - Starfall Bunny - Bonus/metadata.json",
+    "size": 100
+   }
+  ],
+  "meta": {
+   "1": "{\"tags\": []}"
+  },
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "[Lumen Studio] Mirelle - Starfall Bunny - Bonus.zip",
+    "images": [
+     0
+    ],
+    "extras": [
+     1
+    ],
+    "collection": "Mirelle",
+    "folder": "Starfall Bunny"
+   }
+  ]
+ },
+ {
+  "drop": "cos: archive",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "Mirelle - Starfall Bunny.zip",
+    "size": 100
+   },
+   {
+    "path": "Mirelle - Moon Maid.cbz",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Mirelle - Moon Maid.cbz",
+    "file": 1,
+    "collection": "Mirelle",
+    "folder": "Moon Maid"
+   },
+   {
+    "kind": "file",
+    "name": "Mirelle - Starfall Bunny.zip",
+    "file": 0,
+    "collection": "Mirelle",
+    "folder": "Starfall Bunny"
+   }
+  ]
+ },
+ {
+  "drop": "cos: folder of archives",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "Starfall Bunny/Normal.zip",
+    "size": 100
+   },
+   {
+    "path": "Starfall Bunny/Bonus.zip",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Bonus.zip",
+    "file": 1,
+    "folder": "Starfall Bunny"
+   },
+   {
+    "kind": "file",
+    "name": "Normal.zip",
+    "file": 0,
+    "folder": "Starfall Bunny"
+   }
+  ]
+ },
+ {
+  "drop": "cos: video only",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "Clips/a.mp4",
+    "size": 100
+   },
+   {
+    "path": "Clips/b.mp4",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "a.mp4",
+    "file": 0,
+    "folder": "Clips/Clips"
+   },
+   {
+    "kind": "file",
+    "name": "b.mp4",
+    "file": 1,
+    "folder": "Clips/Clips"
+   }
+  ]
+ },
+ {
+  "drop": "cos: root media",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "001.jpg",
+    "size": 100
+   },
+   {
+    "path": "002.mov",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "pack",
+    "name": "Set 2026-01-01.zip",
+    "images": [
+     0,
+     1
+    ],
+    "extras": [],
+    "folder": "Set 2026-01-01"
+   }
+  ]
+ },
+ {
+  "drop": "cos: nested",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "Mirelle/Starfall Bunny/Normal/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Mirelle/Starfall Bunny/Bonus/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Mirelle/extra.zip",
+    "size": 100
+   }
+  ],
+  "plan": [
+   {
+    "kind": "file",
+    "name": "extra.zip",
+    "file": 2,
+    "collection": "Mirelle",
+    "folder": "extra"
+   },
+   {
+    "kind": "pack",
+    "name": "Bonus.zip",
+    "images": [
+     1
+    ],
+    "extras": [],
+    "collection": "Starfall Bunny",
+    "folder": "Bonus"
+   },
+   {
+    "kind": "pack",
+    "name": "Normal.zip",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "collection": "Starfall Bunny",
+    "folder": "Normal"
+   }
+  ]
+ },
+ {
+  "drop": "cos: onto a set",
+  "cosplay": 1,
+  "items": [
+   {
+    "path": "Bonus/001.jpg",
+    "size": 100
+   },
+   {
+    "path": "Normal.zip",
+    "size": 100
+   }
+  ],
+  "series": "sid9",
+  "plan": [
+   {
+    "kind": "file",
+    "name": "Normal.zip",
+    "file": 1,
+    "series": "sid9"
+   },
+   {
+    "kind": "pack",
+    "name": "Bonus.zip",
+    "images": [
+     0
+    ],
+    "extras": [],
+    "series": "sid9"
+   }
+  ]
+ }
+]

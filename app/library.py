@@ -57,7 +57,9 @@ IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp", ".tif", ".
 JXL_EXT = (".jxl",)
 HEIC_EXT = (".heic", ".heif")
 TRANSCODE_EXT = JXL_EXT + HEIC_EXT
-JXL_TTL = float(os.environ.get("JXL_CACHE_DAYS", "7")) * 86400     # converted pages unused this long are dropped
+# JPEG XL / HEIC pages converted to PNG for the browser: unused this long → dropped (rebuilt on the next open).
+# TRANSCODE_CACHE_DAYS; the old name JXL_CACHE_DAYS still works.
+TRANSCODE_TTL = float(os.environ.get("TRANSCODE_CACHE_DAYS") or os.environ.get("JXL_CACHE_DAYS") or "7") * 86400
 LOSSLESS_EXT = (".png", ".bmp", ".tif", ".tiff")     # → the RAW pill
 BROWSER_UNSAFE = (".tif", ".tiff")                  # only Safari shows TIFF: served as PNG (still lossless)
 VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov", ".m4v")
@@ -989,8 +991,8 @@ class Library:
         self._scan_lock = threading.Lock()
         self._x7_lock = threading.Lock()
         self._zips: OrderedDict = OrderedDict()
-        self._jxl_jobs: dict[str, dict] = {}
-        self._jxl_touched: dict[str, float] = {}
+        self._transcode_jobs: dict[str, dict] = {}
+        self._transcode_touched: dict[str, float] = {}
         # background preparation (like Immich / Jellyfin jobs): books waiting to be prepared, newest first
         self._prep = threading.Condition()
         self._prep_queue: OrderedDict = OrderedDict()
@@ -2601,7 +2603,10 @@ class Library:
                 pass
             except OSError as e:
                 log.debug("couldn't remove %s: %s", p, e)
-        for sub in ("thumbs", "panels", "media", "cb7", "jxl", "pages"):
+        for old in ("jxl", "packs"):                   # left-overs of older versions (cache/jxl → cache/transcoded;
+            if (cache / old).is_dir():                 # uploads used to be staged in cache/packs)
+                shutil.rmtree(cache / old, ignore_errors=True)
+        for sub in ("thumbs", "panels", "media", "cb7", "transcoded", "pages"):
             d = cache / sub
             if not d.is_dir():
                 continue
@@ -2609,15 +2614,15 @@ class Library:
                 m = self.CACHE_KEY.match(p.name)
                 if m and m.group(1) not in live:
                     drop(p)
-                elif m and sub == "jxl" and p.is_dir():   # JPEG XL → PNG is temporary: unused for a while → rebuilt on open
-                    job = self._jxl_jobs.get(p.name.split("-")[0], {})
+                elif m and sub == "transcoded" and p.is_dir():   # JPEG XL / HEIC → PNG is temporary: unused a while → rebuilt on open
+                    job = self._transcode_jobs.get(p.name.split("-")[0], {})
                     try:
-                        idle = time.time() - p.stat().st_mtime > JXL_TTL
+                        idle = time.time() - p.stat().st_mtime > TRANSCODE_TTL
                     except OSError:
                         idle = False
                     if idle and job.get("state") != "running":
                         drop(p)
-                        self._jxl_jobs.pop(p.name.split("-")[0], None)
+                        self._transcode_jobs.pop(p.name.split("-")[0], None)
         repack = cache / "repack"                      # left-overs of a .cb7/.cbr conversion that crashed
         if repack.is_dir():
             for p in repack.iterdir():
@@ -2796,6 +2801,12 @@ class Library:
     def get(self, bid: str) -> dict | None:
         return self.books.get(bid)
 
+    def forget_extracted(self, b: dict):
+        """Drop the extracted copy of a .cb7 that was replaced in place (its cache name holds the file's mtime in
+        seconds — a swap within the same second would otherwise keep serving the old pages)."""
+        for d in (CONFIG_DIR / "cache" / "cb7").glob(f"{b['id']}-*"):
+            shutil.rmtree(d, ignore_errors=True)
+
     def _x7_dir(self, b: dict) -> Path:
         """.cb7 (solid 7z) can't be read entry-by-entry cheaply: extract once into the cache."""
         d = CONFIG_DIR / "cache" / "cb7" / f"{b['id']}-{b['mtime']}"
@@ -2883,24 +2894,24 @@ class Library:
             self._zips[key] = z
             return set(z.namelist())
 
-    # ---- JPEG XL / HEIC → PNG (cached per book version in cache/jxl; dropped with the book or after JXL_TTL idle)
-    def _jxl_dir(self, b: dict) -> Path:
-        return CONFIG_DIR / "cache" / "jxl" / f"{b['id']}-{b['mtime']}"
+    # ---- JPEG XL / HEIC → PNG (cached per book version in cache/transcoded; dropped with the book or after TRANSCODE_TTL idle)
+    def _transcode_dir(self, b: dict) -> Path:
+        return CONFIG_DIR / "cache" / "transcoded" / f"{b['id']}-{b['mtime']}"
 
-    def _jxl_touch(self, d: Path):
-        """Mark a book's converted pages as used (at most once a minute) — the sweep drops ones idle > JXL_TTL."""
+    def _transcode_touch(self, d: Path):
+        """Mark a book's converted pages as used (at most once a minute) — the sweep drops ones idle > TRANSCODE_TTL."""
         now = time.time()
-        if now - self._jxl_touched.get(d.name, 0) > 60 and d.is_dir():
-            self._jxl_touched[d.name] = now
+        if now - self._transcode_touched.get(d.name, 0) > 60 and d.is_dir():
+            self._transcode_touched[d.name] = now
             try:
                 os.utime(d)
             except OSError:
                 pass
 
     def transcoded_page(self, b: dict, n: int) -> bytes:
-        f = self._jxl_dir(b) / f"{n}.png"
+        f = self._transcode_dir(b) / f"{n}.png"
         if f.exists():
-            self._jxl_touch(f.parent)
+            self._transcode_touch(f.parent)
             return f.read_bytes()
         missing = self._decoder_missing([b["entries"][n]])
         if missing:
@@ -2924,22 +2935,22 @@ class Library:
 
     def transcode_status(self, b: dict) -> dict:
         todo = [i for i, n in enumerate(b["entries"]) if n.lower().endswith(TRANSCODE_EXT)]
-        d = self._jxl_dir(b)
+        d = self._transcode_dir(b)
         done = sum((d / f"{i}.png").exists() for i in todo) if d.is_dir() else 0
-        job = self._jxl_jobs.get(b["id"])
+        job = self._transcode_jobs.get(b["id"])
         state = "done" if done >= len(todo) else (job or {}).get("state", "idle")
         return {"total": len(todo), "done": done, "state": state, "error": (job or {}).get("error")}
 
     def transcode_start(self, b: dict) -> dict:
         """Transcode every JPEG XL page of the book in the background (a few at a time); poll transcode_status."""
         st = self.transcode_status(b)
-        self._jxl_touch(self._jxl_dir(b))
+        self._transcode_touch(self._transcode_dir(b))
         if st["state"] in ("done", "running"):
             return st
         missing = self._decoder_missing(b["entries"])
         if missing:
             return {**st, "state": "error", "error": missing}
-        job = self._jxl_jobs[b["id"]] = {"state": "running", "error": None}
+        job = self._transcode_jobs[b["id"]] = {"state": "running", "error": None}
         todo = [i for i, n in enumerate(b["entries"]) if n.lower().endswith(TRANSCODE_EXT)]
 
         def run():
@@ -2951,7 +2962,7 @@ class Library:
             except Exception as e:  # noqa: BLE001
                 log.warning("transcode of %s failed: %s", b["rel"], e)
                 job.update(state="error", error=str(e))
-        threading.Thread(target=run, name=f"jxl-{b['id']}", daemon=True).start()
+        threading.Thread(target=run, name=f"transcode-{b['id']}", daemon=True).start()
         return {**st, "state": "running"}
 
     # ---- screen-sized page copies

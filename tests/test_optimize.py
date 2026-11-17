@@ -147,9 +147,9 @@ def test_kept_originals_are_cleaned_up_after_the_keep_time(lib):
 def test_default_preset_and_own_presets(lib):
     b = _book(lib, {"001.jpg": photo(seed=1), "002.jpg": photo(seed=2)})
     o = Optimizer(lib)
-    assert [(p["id"], p["quality"], p["speed"]) for p in o.presets()] == [("default", 70, 6)]
+    assert [(p["id"], p["quality"], p["speed"]) for p in o.presets()] == [("default", 70, 6), ("lossless", 100, 0)]
     mine = o.add_preset("Small", 40, 8)
-    assert [p["name"] for p in o.presets()] == ["Default", "Small"]
+    assert [p["name"] for p in o.presets()] == ["Default", "Lossless", "Small"]
     with pytest.raises(ValueError):
         o.add_preset("small", 50, 6)                       # same name
     with pytest.raises(ValueError):
@@ -160,7 +160,7 @@ def test_default_preset_and_own_presets(lib):
     assert e["books"] == 1 and 0 < e["after"] < e["before"]
     j = o.start("me", [b], mine["id"], keep=True, max_edge=0, title="x")
     o.delete_preset(mine["id"])                            # deleted while queued: the job keeps its settings
-    assert [p["id"] for p in o.presets()] == ["default"]
+    assert [p["id"] for p in o.presets()] == ["default", "lossless"]
     while o.step():
         if o.jobs.get(j["id"])["state"] == "done":
             break
@@ -183,9 +183,9 @@ def test_the_api_end_to_end(tmp_path, monkeypatch):
     M.lib.scan()
     sid = next(iter(M.lib.books.values()))["seriesId"]
     pr = c.get("/api/optimize/presets").json()
-    assert [p["id"] for p in pr["presets"]] == ["default"]
+    assert [p["id"] for p in pr["presets"]] == ["default", "lossless"]
     mine = c.post("/api/optimize/presets", json={"name": "Lighter", "quality": 55, "speed": 7}).json()
-    assert [p["name"] for p in c.get("/api/optimize/presets").json()["presets"]] == ["Default", "Lighter"]
+    assert [p["name"] for p in c.get("/api/optimize/presets").json()["presets"]] == ["Default", "Lossless", "Lighter"]
     assert c.delete("/api/optimize/presets/default").status_code == 400
     assert c.delete(f"/api/optimize/presets/{mine['id']}").status_code == 200
     est = c.post("/api/optimize/estimate", json={"series": [sid], "preset": "default"}).json()
@@ -305,3 +305,82 @@ def test_auto_subsampling_is_444_for_every_library_type(monkeypatch):
     for libtype in ("manga", "comics", "cosplay"):
         O.encode_page(buf.getvalue(), "001.png", dict(O.DEFAULT_PRESET), libtype)
     assert seen == ["4:4:4"] * 3
+
+
+def lineart(seed=1) -> bytes:
+    """A line-art page as an uncompressed-ish PNG (what RAW scans look like)."""
+    from PIL import ImageDraw
+    rng = np.random.default_rng(seed)
+    im = Image.new("RGB", (600, 900), "white")
+    d = ImageDraw.Draw(im)
+    for _ in range(120):
+        x, y = rng.integers(0, 600), rng.integers(0, 900)
+        d.line((x, y, x + rng.integers(-200, 200), y + rng.integers(-200, 200)), fill=(20, 20, 20), width=3)
+    d.rectangle((40, 40, 200, 120), fill=(200, 30, 40))                 # a red panel: colour, not grayscale
+    buf = io.BytesIO(); im.save(buf, "PNG", compress_level=1)
+    return buf.getvalue()
+
+
+def test_lossless_is_pixel_exact_webp_and_only_for_lossless_pages(lib):
+    b = _book(lib, {"001.png": lineart(1), "002.png": lineart(2), "003.jpg": photo(seed=3)})
+    o = Optimizer(lib)
+    r = o.convert(b, o.preset("lossless"), keep=True, max_edge=0)
+    assert r["converted"] == 2 and r["after"] < r["before"]
+    nb = lib.get(b["id"])
+    assert nb["entries"] == ["001.webp", "002.webp", "003.jpg"]          # the JPEG stays a JPEG
+    for n, src in (("001.webp", lineart(1)), ("002.webp", lineart(2))):
+        new = np.asarray(Image.open(io.BytesIO(lib.read(nb, n))).convert("RGB"))
+        assert (new == np.asarray(Image.open(io.BytesIO(src)).convert("RGB"))).all()   # not a single pixel changed
+    o.undo(b["id"])
+    assert lib.get(b["id"])["entries"] == ["001.png", "002.png", "003.jpg"]
+
+
+def test_lossless_leaves_a_photo_set_alone(lib):
+    b = _book(lib, {"001.jpg": photo(seed=1), "002.jpg": photo(seed=2)}, "cosplay", "Starfall Bunny.zip")
+    o = Optimizer(lib)
+    assert o.convert(b, o.preset("lossless"), keep=False, max_edge=0)["converted"] == 0
+
+
+def test_advanced_preset_settings(lib, monkeypatch):
+    o = Optimizer(lib)
+    p = o.add_preset("Small colour", 50, 6, subsampling="4:2:0", grayscale=False)
+    assert (p["mode"], p["subsampling"], p["grayscale"]) == ("avif", "4:2:0", False)
+    with pytest.raises(ValueError):
+        o.add_preset("Odd", 50, 6, subsampling="4:1:1")
+    ll = o.add_preset("My lossless", 10, 9, mode="lossless")            # quality / speed don't apply
+    assert (ll["mode"], ll["quality"], ll["grayscale"]) == ("lossless", 100, False)
+    seen = []
+    real = Image.Image.save
+    def spy(self, fp, format=None, **kw):
+        if (format or "").upper() == "AVIF":
+            seen.append((self.mode, kw.get("subsampling")))
+        return real(self, fp, format, **kw)
+    monkeypatch.setattr(Image.Image, "save", spy)
+    gray = io.BytesIO(); Image.new("RGB", (200, 300), (128, 128, 128)).save(gray, "PNG")
+    from app.optimize import encode_page
+    encode_page(gray.getvalue(), "001.png", o.preset(p["id"]), "comics")     # B&W detection off: stays colour
+    encode_page(gray.getvalue(), "001.png", o.preset("default"), "comics")   # on: saved as grayscale
+    assert seen == [("RGB", "4:2:0"), ("L", "4:0:0")]
+
+
+def test_cb7_sets_are_optimized(lib):
+    import py7zr
+    l = lib.create_library("Comics", "Comics", False, "#fff", "comics")
+    p = L.LIB_ROOT / l["path"] / "Starfall" / "Starfall 01.cb7"
+    p.parent.mkdir(parents=True)
+    with py7zr.SevenZipFile(p, "w") as z:
+        z.writestr(photo(seed=1), "001.jpg"); z.writestr(photo(seed=2), "002.jpg")
+        z.writestr(b'{"title": "Starfall"}', "metadata.json")
+    lib.scan()
+    (b,) = lib.books.values()
+    o = Optimizer(lib)
+    assert o.why_not(b) is None
+    r = o.convert(b, o.preset("default"), keep=True, max_edge=0)
+    assert r["converted"] == 2 and r["after"] < r["before"]
+    nb = lib.get(b["id"])
+    assert nb["id"] == b["id"] and nb["src"] == "cb7" and nb["entries"] == ["001.avif", "002.avif"]
+    with py7zr.SevenZipFile(p) as z:
+        assert sorted(f.filename for f in z.list()) == ["001.avif", "002.avif", "metadata.json"]
+    Image.open(io.BytesIO(lib.read(nb, "001.avif"))).load()
+    o.undo(b["id"])
+    assert lib.get(b["id"])["entries"] == ["001.jpg", "002.jpg"]

@@ -22,9 +22,11 @@ const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
 //   s: a group of books   b: one book   ch: what you page through   g: a folder of groups (🗂️)
 const VOCAB = {
   comics:  { s: 'series',     b: 'book', ch: 'chapter', g: 'collection', G_BADGE: 'COLLECTION',
-             author: 'Author', authorHint: 'Writer / artist', pub: 'Publisher / group', by: a => 'by ' + a, from: p => p },
+             author: 'Author', authorHint: 'Writer / artist', pub: 'Publisher / group', by: a => 'by ' + a, from: p => p,
+             dropWhat: '<b>.cbz</b>, <b>.zip</b> or <b>.epub</b> files', dropSorts: 'Chapters are sorted into series folders automatically.' },
   cosplay: { s: 'set',        b: 'variant', ch: 'variant', g: 'cosplayer', G_BADGE: 'COSPLAYER',   // circle → metadata
-             author: 'Cosplayer', authorHint: 'Who is in the photos', pub: 'Photographer / publisher', by: a => a, from: p => '📷 ' + p },
+             author: 'Cosplayer', authorHint: 'Who is in the photos', pub: 'Photographer / publisher', by: a => a, from: p => '📷 ' + p,
+             dropWhat: '<b>.zip</b> sets, photo folders or videos', dropSorts: 'Sets are sorted into cosplayer and set folders automatically.' },
 };
 const V = lid => VOCAB[lid && isCosplay(lid) ? 'cosplay' : 'comics'];
 // "all libraries" views: Cosplay words only when every library is a Cosplay one
@@ -724,7 +726,7 @@ function renderHome() {
   S.visibleSeries = list.map(([x]) => x.id);
   const Vh = col ? V(col.library) : Vhome();
   $('#stats').textContent = [cols.length ? plural(cols.length, Vh.g) : '', plural(list.length, Vh.s), plural(list.reduce((n, [s]) => n + s.books.length, 0), Vh.b),
-    hits.length ? `${plural(hits.length, 'single chapter')} by tag` : ''].filter(Boolean).join(' · ');
+    hits.length ? `${plural(hits.length, 'single ' + Vh.ch)} by tag` : ''].filter(Boolean).join(' · ');
   const weekAgo = Date.now() / 1000 - 7 * 86400;
   // front cover live; the ones behind it come as one picture drawn by the server (much cheaper to scroll).
   // Generated placeholder art can't be drawn there — such stacks stay as before.
@@ -756,7 +758,7 @@ function renderHome() {
     const fmt = !b0 ? '' : s.genres?.length ? s.genres[0].toUpperCase().slice(0, 18) : s.novel ? 'NOVEL' : s.books.every(x => x.format === 'video') ? '▶ VIDEO' : s.books.some(x => x.videos?.length) ? '▶ + PHOTOS' : libRtl(b0) ? 'RTL' : '';
     const one = s.books.length === 1;
     const unread = s.books.length ? newCount(s) : 0;
-    const bubble = unread && !one ? `<span class="ubub" title="${plural(unread, 'chapter')} not started yet"><i></i><b>${unread > 99 ? '99+' : unread}</b> new</span>` : '';
+    const bubble = unread && !one ? `<span class="ubub" title="${plural(unread, V(s.library).ch)} not started yet"><i></i><b>${unread > 99 ? '99+' : unread}</b> new</span>` : '';
     return `<button class="card ${seriesTrashed(s) ? 'trashed' : unread ? 'unread' : ''} ${selOn && S.sel.has(s.id) ? 'sel' : ''}" data-series="${s.id}" ${one ? `data-single="${b0.id}"` : ''} style="--d:${Math.min(k + cols.length, 20) * 30}ms">
       <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
       <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
@@ -1987,13 +1989,13 @@ function renderWelcome() {
   $('#welcome').innerHTML = `<div class="welcome"><div class="welcome-card">
     <svg class="mascot" viewBox="0 0 200 200" aria-hidden="true">${critter(100, 128, 60, 48)}</svg>
     <h1>Add your <em>first</em> library</h1>
-    <p>A library is a shelf for your comics, manga or light novels. Create one, then drag <code>.cbz</code> or <code>.epub</code> files — or whole folders — straight onto this window.</p>
+    <p>A library is a shelf for your comics, manga, light novels or Cosplay photo sets. Create one, then drag <code>.cbz</code> or <code>.epub</code> files — or whole folders — straight onto this window.</p>
     <button class="btn-primary" data-addlib>+ Add library</button>
     <div class="steps"><span><b>1</b>Create a library</span><span><b>2</b>Drop in your files</span><span><b>3</b>Start reading</span></div>
   </div></div>`;
 }
 const dropzoneHTML = lid => `<div class="dropzone"><div class="big">📚</div><h3>${esc(libName(lid))} is empty</h3>
-  <p>Drag <b>.cbz</b>, <b>.zip</b> or <b>.epub</b> files — or whole folders — anywhere onto this window.<br>Chapters are sorted into series folders automatically.</p>
+  <p>Drag ${V(lid).dropWhat} — or whole folders — anywhere onto this window.<br>${V(lid).dropSorts}</p>
   <button class="btn-primary" data-pick="${lid}">Choose files</button></div>`;
 
 const SWATCHES = ['#ff5c8a', '#ffd84d', '#5ee6c1', '#7aa8ff', '#b388ff', '#ff9f5a'];
@@ -2357,7 +2359,7 @@ window.addEventListener('drop', async e => {
       name: `${plural(unreadable.length, 'file')} Windows wouldn’t let the browser open: the full path is over 260 characters. Shorten the name or move the folder closer to the drive (e.g. D:\\Manga), then drop just these again.` });
     renderUploads(true);
   }
-  if (!items.length) return appToast(unreadable.length ? `Your browser couldn’t read ${plural(unreadable.length, 'file')} — see the upload panel` : 'Couldn’t find any comics or images in that drop');
+  if (!items.length) return appToast(unreadable.length ? `Your browser couldn’t read ${plural(unreadable.length, 'file')} — see the upload panel` : 'Couldn’t find any archives, images or videos in that drop');
   if (!S.libraries.length) return openLibModal(null, items);
   const cur = onSeriesPage() && S.seriesById[S.curSeries];
   if (cur) return uploadFiles(cur.library, items, cur.id);
@@ -2409,181 +2411,23 @@ $('#filePick').addEventListener('change', e => {
   if (files.length && UP.pickTarget) uploadFiles(UP.pickTarget, files, UP.pickSeries, UP.pickCol);
 });
 
-/* ---------- folder planner: decide what each dropped folder becomes ----------
-   folder of images                    → a series with one chapter (packed into <folder>.cbz)
-   folder whose subfolders are images  → a series, one chapter per subfolder
-   folder of numbered chapters         → a series (folder name = series name)
-   folder of unrelated archives        → a collection, each archive its own series
-   folder of series folders            → a collection containing those series            */
+/* ---------- what a drop becomes is planned on the server (app/uploadplan.py) — one set of naming rules ---------- */
 const IMG_RE = /\.(jpe?g|png|webp|avif|gif|bmp|tiff?|jxl|heic|heif)$/i;
 const natCmp = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-const tidyName = v => v.replace(/[\s_]+/g, ' ').replace(/^[\s\-_.]+|[\s\-_.]+$/g, '');
-const safeName = v => v.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^[\s.]+|[\s.]+$/g, '').slice(0, 150) || 'Untitled';
-function seriesStem(name, isFile = true) {
-  let s = isFile ? name.replace(/\.[^.]+$/, '') : name, u;   // folders have no extension: "Name Ch.1" keeps its ".1"
-  while ((u = s.replace(/\s*(?:\[[^\[\](){}]*\]|\([^\[\](){}]*\)|\{[^\[\](){}]*\})/g, ' ')) !== s) s = u;   // innermost first: nested groups go whole
-  const re = /(?:^|[\s_\-.])(c|ch|chap|chapter|part|pt|ep|episode|v|vol|volume|#)\.?\s*(\d+(?:\.\d+)?)(?=$|[\s_\-.])/ig;
-  let m, last = null;
-  while ((m = re.exec(s))) last = m;
-  if (last) return { num: +last[2], before: s.slice(0, last.index) };
-  const t = s.match(/\s(\d{1,4}(?:\.\d+)?)\s*$/);
-  return t ? { num: +t[1], before: s.slice(0, t.index) } : { num: null, before: s };
-}
-function relatedArchives(files) {
-  if (files.length < 2) return true;
-  const parsed = files.map(f => seriesStem(f.name));
-  const keys = new Set(parsed.filter(p => p.num != null).map(p => tidyName(p.before).toLowerCase()));
-  const loose = parsed.filter(p => p.num == null);   // "Name.cbz" beside "Name - Part 2.cbz" is part 1 of the same series
-  return keys.size === 1 && (loose.length === 0 || (loose.length === 1 && keys.has(tidyName(loose[0].before).toLowerCase())));
-}
-function fileTree(items) {
-  const root = { name: '', dirs: {}, files: [] };
-  for (const it of items) {
-    const parts = it.path.split('/').filter(Boolean);
-    let node = root;
-    for (const p of parts.slice(0, -1)) node = node.dirs[p] ||= { name: p, dirs: {}, files: [] };
-    node.files.push(it.file);
-  }
-  return root;
-}
-// metadata.json / ComicInfo.xml inside a dropped folder of images go into the packed file, and its title names it:
-//   metadata.json "title"  → the file and its series / set     ComicInfo.xml: Series → the series, Title → the file
 const META_RE = /^(metadata\.json|comicinfo\.xml)$/i;
-const META = new Map();                                // File → { title, series } (filled by readMeta before planning)
-const metaIn = n => n.files.filter(f => META_RE.test(f.name));
-function folderMeta(n) {
-  const out = {};
-  for (const f of metaIn(n)) {                         // metadata.json wins over ComicInfo.xml
-    const m = META.get(f) || {};
-    if (/\.json$/i.test(f.name)) { if (m.title) out.title = m.title; }
-    else { out.title ||= m.title; out.series = m.series; }
-  }
-  return out;
-}
-const titleOf = n => tidyName(folderMeta(n).title || '') || n.name;                       // the packed file
-const seriesOf = n => { const m = folderMeta(n); return tidyName(m.series || m.title || '') || n.name; };   // its folder
-async function readMeta(items) {
-  META.clear();
-  await Promise.all(items.filter(it => META_RE.test(it.file.name)).map(async it => {
-    try {
-      const text = await it.file.text();
-      if (/\.json$/i.test(it.file.name)) {
-        const d = JSON.parse(text.replace(/^\uFEFF/, ''));
-        META.set(it.file, { title: typeof d?.title === 'string' ? d.title.trim() : '' });
-      } else {
-        const x = new DOMParser().parseFromString(text, 'application/xml');
-        const tag = t => x.getElementsByTagName(t)[0]?.textContent?.trim() || '';
-        const series = tag('Series'), num = tag('Number');
-        META.set(it.file, { title: tag('Title') || (series && num ? `${series} ${num}` : ''), series });
-      }
-    } catch { /* unreadable: the folder name stays */ }
+// the plan for a drop: the server gets paths, sizes and the text of metadata.json / ComicInfo.xml; the jobs it
+// returns point back into `usable` by index
+async function planDrop(lid, usable, seriesId, colFolder) {
+  const meta = {};
+  await Promise.all(usable.map(async (it, i) => {
+    if (META_RE.test(it.file.name) && it.file.size < 200_000) { try { meta[i] = await it.file.text(); } catch { /* unreadable: names stay */ } }
   }));
-}
-// a folder holding images packs ALL its media (videos between photos stay in order); videos alone stay separate files
-const hasImages = n => n.files.some(f => IMG_RE.test(f.name));
-const archivesIn = n => n.files.filter(f => BOOK_RE.test(f.name) || (!hasImages(n) && VIDEO_RE.test(f.name))).sort((a, b) => natCmp(a.name, b.name));
-const imagesIn = n => hasImages(n) ? n.files.filter(f => IMG_RE.test(f.name) || VIDEO_RE.test(f.name)).sort((a, b) => natCmp(a.name, b.name)) : [];
-const isImageFolder = n => imagesIn(n).length && !archivesIn(n).length && !Object.keys(n.dirs).length;
-// sibling folders "Name 1", "Name 2" / "Name Ch.1", "Name Ch.2" (+ a plain "Name" = part 1) belong together:
-// → { groups: [{ name: 'Name', dirs: [...] }], rest: [folders that stand alone] }
-function stemGroups(dirs) {
-  const keyOf = d => { const p = seriesStem(d.name, false), name = tidyName(p.before); return { key: name.toLowerCase(), name, num: p.num }; };
-  const groups = new Map();
-  for (const d of dirs) { const k = keyOf(d); if (k.num != null && k.key) { if (!groups.has(k.key)) groups.set(k.key, { name: k.name, dirs: [] }); groups.get(k.key).dirs.push(d); } }
-  for (const d of dirs) { const k = keyOf(d); if (k.num == null && groups.has(k.key)) groups.get(k.key).dirs.unshift(d); }
-  const out = [...groups.values()].filter(g => g.dirs.length >= 2);
-  out.forEach(g => { const [lead, ...nums] = g.dirs; const plain = keyOf(lead).num == null;
-    g.dirs = plain ? [lead, ...nums.sort((a, b) => keyOf(a).num - keyOf(b).num)] : g.dirs.sort((a, b) => keyOf(a).num - keyOf(b).num); });
-  const used = new Set(out.flatMap(g => g.dirs));
-  return { groups: out, rest: dirs.filter(d => !used.has(d)) };
-}
-function planUploads(items, ctx) {
-  const jobs = [], root = fileTree(items);
-  const fileJob = (f, place) => jobs.push({ f, name: f.name, size: f.size, ...place });
-  const packJob = (name, images, place, extras = []) => jobs.push({ name: safeName(name) + '.cbz', images, extras, size: images.reduce((n, f) => n + f.size, 0), packed: true, ...place });
-  const top = { series: ctx.seriesId || undefined, collection: ctx.colFolder || undefined };
-  archivesIn(root).forEach(f => fileJob(f, top));
-  if (imagesIn(root).length) {
-    const m = folderMeta(root);
-    const nm = tidyName(m.title || '') || (ctx.seriesId ? `Chapter ${new Date().toISOString().slice(0, 10)}` : `Images ${new Date().toISOString().slice(0, 10)}`);
-    packJob(nm, imagesIn(root), ctx.seriesId ? top : { ...top, folder: safeName(tidyName(m.series || '') || nm) }, metaIn(root));
-  }
-  const planFolder = (d, c) => {
-    const subs = Object.values(d.dirs);
-    const imgSubs = subs.filter(isImageFolder).sort((a, b) => natCmp(a.name, b.name));
-    const otherSubs = subs.filter(x => !imgSubs.includes(x));
-    const arcs = archivesIn(d), imgs = imagesIn(d);
-    const asCollection = !c.seriesId && !c.colFolder && (otherSubs.length > 0 || (arcs.length > 1 && !relatedArchives(arcs) && !imgs.length && !imgSubs.length));
-    const seriesPlace = c.seriesId ? { series: c.seriesId } : { collection: c.colFolder || undefined, folder: safeName(seriesOf(d)) };
-    if (asCollection) {
-      arcs.forEach(f => fileJob(f, { collection: d.name }));                      // loose = one series each
-      if (imgs.length) packJob(titleOf(d), imgs, { collection: d.name, folder: safeName(seriesOf(d)) }, metaIn(d));
-      const sg = stemGroups(imgSubs);                                             // "Name 1", "Name 2" → series "Name"
-      sg.groups.forEach(g => g.dirs.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: d.name, folder: safeName(g.name) }, metaIn(x))));
-      sg.rest.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: d.name, folder: safeName(seriesOf(x)) }, metaIn(x)));
-      otherSubs.forEach(x => planFolder(x, { colFolder: d.name }));
-      return;
-    }
-    if (imgs.length) packJob(titleOf(d), imgs, seriesPlace, metaIn(d));           // the folder itself is a chapter
-    imgSubs.forEach(x => packJob(titleOf(x), imagesIn(x), seriesPlace, metaIn(x))); // each image subfolder is a chapter
-    arcs.forEach(f => fileJob(f, seriesPlace));
-    otherSubs.forEach(x => planFolder(x, c));
-  };
-  // image folders dropped side by side: "Name 1", "Name 2"… → one series "Name", a chapter each
-  const tg = ctx.seriesId ? { groups: [], rest: [] } : stemGroups(Object.values(root.dirs).filter(isImageFolder));
-  tg.groups.forEach(g => g.dirs.forEach(x => packJob(titleOf(x), imagesIn(x), { collection: ctx.colFolder || undefined, folder: safeName(g.name) }, metaIn(x))));
-  const grouped = new Set(tg.groups.flatMap(g => g.dirs));
-  Object.values(root.dirs).filter(d => !grouped.has(d)).forEach(d => planFolder(d, ctx));
-  return jobs;
-}
-
-/* ---------- Cosplay planner: Cosplayer → Set → Variant ----------
-   Every set in a drop — a folder of photos (± videos) or an archive — is one *unit*; it becomes a variant.
-   The server says which cosplayer and set each unit belongs to (POST …/cosplay-plan), so the naming rules
-   live in one place (app/library.py: cosplay_name / variant_groups):
-     "[Dreva(Solene)]My Lucky Bunny Bonus / Normal / S_version"  →  Solene / My Lucky Bunny / 3 variants
-   A dropped folder of sets ("Solene/…") names the cosplayer when the set names don't; a folder holding only
-   archives is one set with each archive a variant. Dropped onto a set page: everything joins that set.
-   The circle (Dreva) stays in the names → shown as publisher. Photo units are packed into <name>.zip,
-   video-only units stay folders of videos. */
-const mediaIn = n => n.files.filter(f => IMG_RE.test(f.name) || VIDEO_RE.test(f.name)).sort((a, b) => natCmp(a.name, b.name));
-const booksIn = n => n.files.filter(f => BOOK_RE.test(f.name)).sort((a, b) => natCmp(a.name, b.name));
-const isLeaf = n => !Object.keys(n.dirs).length;
-const stemOf = f => f.name.replace(/\.[^.]+$/, '');
-function cosplayUnits(root) {
-  const units = [];
-  const stamp = `Set ${new Date().toISOString().slice(0, 10)}`;
-  if (mediaIn(root).length) units.push({ name: tidyName(folderMeta(root).title || '') || stamp, media: mediaIn(root), extras: metaIn(root) });
-  booksIn(root).forEach(f => units.push({ name: stemOf(f), file: f }));
-  const walk = (d, parent) => {
-    if (isLeaf(d)) {
-      if (mediaIn(d).length) units.push({ name: titleOf(d), media: mediaIn(d), parent, extras: metaIn(d) });
-      const arcs = booksIn(d);                         // a folder of archives = one set, archives = its variants
-      arcs.forEach(f => units.push({ name: stemOf(f), file: f, parent, setHint: mediaIn(d).length ? null : d.name }));
-      return;
-    }
-    if (mediaIn(d).length) units.push({ name: titleOf(d), media: mediaIn(d), parent, extras: metaIn(d) });
-    booksIn(d).forEach(f => units.push({ name: stemOf(f), file: f, parent: d.name }));
-    Object.values(d.dirs).sort((a, b) => natCmp(a.name, b.name)).forEach(x => walk(x, d.name));
-  };
-  Object.values(root.dirs).sort((a, b) => natCmp(a.name, b.name)).forEach(d => walk(d, null));
-  return units;
-}
-function planCosplay(items, ctx, plans = {}) {
-  const jobs = [];
-  for (const u of cosplayUnits(fileTree(items))) {
-    const p = plans[u.name] || {};
-    const place = ctx.seriesId ? { series: ctx.seriesId }
-      : { collection: ctx.colFolder || p.cosplayer || u.parent || undefined, folder: safeName(u.setHint || p.set || u.name) };
-    if (u.file) { jobs.push({ f: u.file, name: u.file.name, size: u.file.size, ...place }); continue; }
-    if (u.media.some(f => IMG_RE.test(f.name))) {     // photos (± videos in their place) → <name>.zip
-      jobs.push({ name: safeName(u.name) + '.zip', images: u.media, extras: u.extras || [], size: u.media.reduce((n, f) => n + f.size, 0), packed: true, ...place });
-    } else {                                          // video-only variant → its own folder of videos
-      const sub = safeName(u.name);
-      u.media.forEach(f => jobs.push({ f, name: f.name, size: f.size, ...place, folder: place.folder ? `${place.folder}/${sub}` : sub }));
-    }
-  }
-  return jobs;
+  const d = await jsonFetch('POST', `/api/libraries/${lid}/plan`, { items: usable.map(it => ({ path: it.path, size: it.file.size })), meta,
+    series: seriesId || null, collection: colFolder || null, today: new Date().toISOString().slice(0, 10) });
+  const f = i => usable[i].file;
+  return d.jobs.map(j => j.kind === 'pack'
+    ? { name: j.name, images: j.images.map(f), extras: j.extras.map(f), size: j.size, packed: true, series: j.series, collection: j.collection, folder: j.folder }
+    : { f: f(j.file), name: j.name, size: j.size, series: j.series, collection: j.collection, folder: j.folder });
 }
 
 // images in a folder (or the top of the drop) that also holds .cbz/.epub/… archives
@@ -2619,7 +2463,6 @@ function askDialog({ title, body, yes = 'Yes', no = 'No' }) {
 async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   const items = input.map(x => x.file ? x : { file: x, path: x.webkitRelativePath || x.name });
   let usable = items.filter(it => BOOK_RE.test(it.file.name) || IMG_RE.test(it.file.name) || VIDEO_RE.test(it.file.name) || META_RE.test(it.file.name));
-  await readMeta(usable);
   // images lying next to archives (posters, covers, scans of the box…) would be packed into a chapter / set of
   // their own — ask first. A drop of *only* images is a photo set / chapter on purpose: no question then.
   const stray = strayImages(usable);
@@ -2627,7 +2470,7 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   if (stray.length) {
     const keep = await askDialog({
       title: 'Stray images found',
-      body: `<p><b>${plural(stray.length, 'image')}</b> ${stray.length === 1 ? 'sits' : 'sit'} next to comic archives in this drop:</p>
+      body: `<p><b>${plural(stray.length, 'image')}</b> ${stray.length === 1 ? 'sits' : 'sit'} next to archives in this drop:</p>
         <p class="askfiles">${stray.slice(0, 6).map(it => `<code>${esc(it.path)}</code>`).join(' ')}${stray.length > 6 ? ` <span>+${stray.length - 6} more</span>` : ''}</p>
         <p class="hintline"><b>Keep</b> packs them into a ${V(lid).ch} of their own · <b>Skip</b> adds only the archives.</p>`,
       yes: 'Keep them', no: 'Skip them' });
@@ -2650,20 +2493,14 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   }
   const ignored = items.length - usable.length - strayNote - plainNote;
   let jobs;
-  if (isCosplay(lid)) {                               // ask the server how the set names split, then plan
-    let plans = {};
-    if (!seriesId) {
-      const names = [...new Set(cosplayUnits(fileTree(usable)).map(u => u.name))];
-      try { plans = (await jsonFetch('POST', `/api/libraries/${lid}/cosplay-plan`, { names })).plans || {}; } catch {}
-    }
-    jobs = planCosplay(usable, { seriesId, colFolder }, plans);
-  } else jobs = planUploads(usable, { seriesId, colFolder });
+  try { jobs = await planDrop(lid, usable, seriesId, colFolder); }
+  catch (err) { appToast(`Couldn’t plan this drop: ${err.message}`); return 0; }
   if (!jobs.length && (strayNote || plainNote)) { appToast('Nothing to add — you skipped everything in that drop'); return 0; }
-  if (!jobs.length) { UP.rows.push({ f: { size: 0 }, name: `${plural(items.length, 'file')} skipped`, state: 'err', msg: 'No comics, images or videos', p: 1 }); return renderUploads(true); }
+  if (!jobs.length) { UP.rows.push({ f: { size: 0 }, name: `${plural(items.length, 'file')} skipped`, state: 'err', msg: 'No archives, images or videos', p: 1 }); return renderUploads(true); }
   const upBatch = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);   // groups this drop in the upload log
   const batch = jobs.map(j => ({ ...j, f: j.f || { size: j.size }, lib: lid, batch: upBatch, state: 'queued', msg: j.packed ? `${j.images.length} images → ${j.name.slice(j.name.lastIndexOf('.'))}` : 'Waiting', p: 0,
     where: j.series ? '' : [j.collection && `🗂️ ${j.collection}`, j.folder].filter(Boolean).join(' / ') }));
-  if (ignored) batch.push({ f: { size: 0 }, name: `${plural(ignored, 'other file')} ignored`, state: 'skip', msg: 'Not a comic', p: 1 });
+  if (ignored) batch.push({ f: { size: 0 }, name: `${plural(ignored, 'other file')} ignored`, state: 'skip', msg: 'Not a book, picture or video', p: 1 });
   if (plainNote) batch.push({ f: { size: 0 }, name: `${plural(plainNote, 'archive')} skipped`, state: 'skip', msg: 'Your choice', p: 1 });
   if (strayNote) batch.push({ f: { size: 0 }, name: `${plural(strayNote, 'stray image')} skipped`, state: 'skip', msg: 'Your choice', p: 1 });
   UP.rows.push(...batch); renderUploads(true);
@@ -3035,7 +2872,7 @@ function renderMenu(view, err = '') {
     body = (isS && t.empty ? `<button data-mact="rename">${ico('sliders', 17)} Rename…</button>${colOpt}` : `${colOpt}<button data-mact="lib">${ico('move', 17)} Move to library <span class="chev">›</span></button>
       <button data-mact="series">${ico('stack', 17)} ${isS || t.multiSeries ? `Merge into ${v.s}` : `Move to ${v.s}`} <span class="chev">›</span></button>
       ${isS ? `<button data-mact="rename">${ico('sliders', 17)} Rename…</button><button data-mact="sread">${ico('check', 17)} ${t.books.every(isDone) ? 'Mark as unread' : 'Mark as read'}</button>` : t.multi ? '' : `<button data-mact="read">${ico('check', 17)} ${isDone(t) ? 'Mark as unread' : 'Mark as read'}</button>`}`)
-      + (isS && !onSeriesPage() ? `<button data-mact="open">${ico('book', 17)} Open series</button>` : '') + favOpts + optItems(t) + `
+      + (isS && !onSeriesPage() ? `<button data-mact="open">${ico('book', 17)} Open ${v.s}</button>` : '') + favOpts + optItems(t) + `
       <div class="msep"></div>
       <button class="danger" data-mact="${isS && t.empty ? 'del' : t.multi || t.multiSeries ? 'del' : 'trash'}">${ico('trash', 17)} ${isS && t.empty ? `Delete ${what}` : 'Move to trash'}</button>`;
     if (isS ? seriesTrashed(t) : !t.multi && !t.multiSeries && t.trashed) body = `<p class="mnote">In the trash. It leaves the library in a few minutes and can be restored for 30 days.</p><button data-mact="restore">${ico('refresh', 17)} Restore</button><div class="msep"></div><button class="danger" data-mact="purge">${ico('trash', 17)} Delete forever</button>`;
@@ -3045,14 +2882,14 @@ function renderMenu(view, err = '') {
     const libId = t.library, cur = isS ? t.collectionId : null;
     const cols = S.collections.filter(c => c.library === libId && c.id !== cur);
     body = back + (cur || t.multiSeries ? `<button data-tocol=""><i class="dot" style="background:var(--mute)"></i>No ${v.g} — ${esc(libName(libId))} root</button>` : '')
-      + cols.map(c => `<button data-tocol="${c.id}">🗂️ ${esc(c.name)}<span class="chev">${plural((S.byCol[c.id] || []).length, 'series')}</span></button>`).join('')
+      + cols.map(c => `<button data-tocol="${c.id}">🗂️ ${esc(c.name)}<span class="chev">${plural((S.byCol[c.id] || []).length, v.s)}</span></button>`).join('')
       + `<div class="msep"></div><button data-mact="newcolmove">+ New ${v.g}…</button>`;
   } else if (view === 'lib') {
     const libs = t.multiSeries ? S.libraries : S.libraries.filter(l => l.id !== t.library);
-    body = back + (libs.length ? libs.map(l => `<button data-tolib="${l.id}"><i class="dot" style="background:${esc(l.color)}"></i>${esc(l.name)}<span class="chev">${plural(l.series || 0, 'series')}</span></button>`).join('')
+    body = back + (libs.length ? libs.map(l => `<button data-tolib="${l.id}"><i class="dot" style="background:${esc(l.color)}"></i>${esc(l.name)}<span class="chev">${plural(l.series || 0, V(l.id).s)}</span></button>`).join('')
       : `<p class="mnote">This is your only library.</p><button data-mact="newlib">+ Create another library</button>`);
   } else if (view === 'series') {
-    body = back + `<input class="msearch" id="mSearch" placeholder="Search series…" autocomplete="off"><div class="mlist" id="mList">${seriesChoices('')}</div>`
+    body = back + `<input class="msearch" id="mSearch" placeholder="Search ${pl(v.s)}…" autocomplete="off"><div class="mlist" id="mList">${seriesChoices('')}</div>`
       + (isS || t.multiSeries ? '' : `<div class="msep"></div><button data-mact="newseries">+ New ${v.s}…</button>`);
   } else if (view === 'newseries') {
     body = back + `<p class="mnote" style="padding-bottom:6px">Create a new ${v.s} in <b>${esc(libName(t.library))}</b>:</p>
@@ -3694,29 +3531,44 @@ async function openOptimize(o) {
 }
 function closeOptimize() { $('#optModal')?.classList.remove('open'); if (OPT.cur) OPT.cur.gen++; }
 const optEdge = () => OPT.cur.shrink ? Math.max(800, +OPT.cur.maxEdge || 4000) : 0;
+// the built-in Lossless preset only matters for lossless (RAW: PNG / BMP / TIFF) books — shown once the first
+// estimate says the selection has some; presets you made yourself are always shown
+const optShown = () => { const c = OPT.cur, raw = Object.values(c.est).some(e => e?.raw); return c.presets.filter(p => p.id !== 'lossless' || raw); };
+const presetDesc = p => p.mode === 'lossless'
+  ? 'Lossless WebP · pixel-exact · only PNG / BMP / TIFF pages'
+  : `Quality ${p.quality} · speed ${p.speed}${p.subsampling && p.subsampling !== 'auto' ? ` · colour ${p.subsampling}` : ''}${p.grayscale === false ? ' · no B&amp;W detection' : ''}${p.id === 'default' ? ' · the baseline' : ''}${p.hint ? ` · ${esc(p.hint)}` : ''}`;
 function drawOptimize() {
   const c = OPT.cur, m = $('#optModal'), any = Object.values(c.est)[0];
   const head = any ? `${plural(any.books, V(c.lib).b)} · ${any.pages.toLocaleString()} pages · ${fmtBytes(any.before)}` : `${plural(c.books.length, V(c.lib).b)}`;
   const why = any && Object.entries(any.why || {}).map(([w, n]) => `${plural(n, V(c.lib).b)} skipped — ${esc(w)}`).join('<br>');
   m.querySelector('.sheet').innerHTML = `<h3>✨ Optimize ${escWrap(c.title)}</h3>
     <p class="hintline" id="optHead">${head}</p>
-    <div class="optlist" role="radiogroup" aria-label="Preset">${c.presets.map(p => `<label class="optrow">
+    <div class="optlist" role="radiogroup" aria-label="Preset">${optShown().map(p => `<label class="optrow">
       <input type="radio" name="optPreset" value="${esc(p.id)}" ${p.id === c.preset ? 'checked' : ''}>
-      <span class="on"><b>${esc(p.name)}</b><small>Quality ${p.quality} · speed ${p.speed}${p.builtin ? ' · the baseline' : ''}${p.hint ? ` · ${esc(p.hint)}` : ''}</small></span>
+      <span class="on"><b>${esc(p.name)}</b><small>${presetDesc(p)}</small></span>
       <span class="est" data-est="${esc(p.id)}">${estText(c.est[p.id])}</span>
       ${p.builtin ? '<span></span>' : `<button type="button" class="optdel" data-delpreset="${esc(p.id)}" title="Delete this preset" aria-label="Delete preset ${esc(p.name)}">×</button>`}</label>`).join('')}</div>
     ${c.adding ? `<form class="optnew" id="optNewForm">
         <input type="text" id="optNewName" placeholder="Preset name" maxlength="40" aria-label="Preset name" autocomplete="off" required>
-        <label>Quality <input type="number" id="optNewQ" min="0" max="100" value="${c.newQ ?? 70}" required></label>
-        <label>Speed <input type="number" id="optNewS" min="0" max="10" value="${c.newS ?? 6}" required></label>
+        <label>Quality <input type="number" id="optNewQ" min="0" max="100" value="${c.newQ ?? 70}" required ${c.newMode === 'lossless' ? 'disabled' : ''}></label>
+        <label>Speed <input type="number" id="optNewS" min="0" max="10" value="${c.newS ?? 6}" required ${c.newMode === 'lossless' ? 'disabled' : ''}></label>
         <button type="submit" class="btn-sm pri">Save</button><button type="button" class="btn-sm" data-opt="cancelnew">Cancel</button>
         <small>Quality 0–100: higher looks better and is bigger. Speed 0–10: lower makes smaller files but converts slower.</small>
+        <details class="optadv" ${c.advOpen ? 'open' : ''}><summary>Advanced</summary>
+          <label>Format <select id="optNewMode">
+            <option value="avif" ${c.newMode !== 'lossless' ? 'selected' : ''}>AVIF — much smaller, looks the same</option>
+            <option value="lossless" ${c.newMode === 'lossless' ? 'selected' : ''}>Lossless WebP — pixel-exact (PNG / BMP / TIFF pages only)</option></select></label>
+          <label>Colour <select id="optNewSub" ${c.newMode === 'lossless' ? 'disabled' : ''}>
+            ${[['auto', 'Auto (4:4:4)'], ['4:4:4', '4:4:4 — full colour detail'], ['4:2:0', '4:2:0 — smaller, softer colour edges']].map(([v, t]) => `<option value="${v}" ${(c.newSub || 'auto') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label class="optchk"><input type="checkbox" id="optNewGray" ${c.newGray !== false ? 'checked' : ''} ${c.newMode === 'lossless' ? 'disabled' : ''}> Save black-and-white pages as grayscale (smaller)</label>
+          <small>Max size: “Shrink huge photos” below.</small>
+        </details>
         <div class="formerr" id="optNewErr"></div></form>`
       : '<button type="button" class="optadd" data-opt="newpreset">+ New preset</button>'}
     <label class="optchk"><input type="checkbox" id="optShrink" ${c.shrink ? 'checked' : ''}> Shrink huge photos to
       <input type="number" id="optEdge" min="800" max="16000" step="100" value="${c.maxEdge}" aria-label="Longest side in pixels"> px on the long edge</label>
     <label class="optchk"><input type="checkbox" id="optKeep" ${c.keep ? 'checked' : ''}> Keep originals for ${plural(c.keepDays, 'day')} — undo from the menu any time</label>
-    ${any?.raw ? `<p class="optnote warn">${plural(any.raw, V(c.lib).b)} ${any.raw === 1 ? 'is' : 'are'} lossless (RAW). ${any.raw === 1 ? 'It' : 'They'} won’t be lossless any more.</p>` : ''}
+    ${any?.raw && c.presets.find(p => p.id === c.preset)?.mode !== 'lossless' ? `<p class="optnote warn">${plural(any.raw, V(c.lib).b)} ${any.raw === 1 ? 'is' : 'are'} lossless (RAW). ${any.raw === 1 ? 'It' : 'They'} won’t be lossless any more — pick <b>Lossless</b> to keep every pixel.</p>` : ''}
     ${why ? `<p class="optnote">${why}</p>` : ''}
     <div class="formerr" id="optErr"></div>
     <div class="formfoot"><button type="button" class="btn-ghost" data-opt="compare" ${any?.books ? '' : 'disabled'}>Compare pages…</button><div class="grow"></div>
@@ -3727,20 +3579,27 @@ const estText = e => !e ? '<i>estimating…</i>' : e.error ? '—' : `~${fmtByte
 async function estimateAll() {
   const c = OPT.cur, gen = c.gen, edge = optEdge();
   for (const p of c.presets) {
-    if (c.est[p.id]) continue;
+    if (c.est[p.id] || !optShown().includes(p)) continue;
     let e;
     try { e = await jsonFetch('POST', '/api/optimize/estimate', { ...c.sel, preset: p.id, maxEdge: edge }); }
     catch (err) { e = { error: err.message }; }
     if (gen !== OPT.cur.gen || edge !== optEdge()) return;          // closed, or the size changed meanwhile
     const first = !Object.values(c.est).some(x => x && !x.error);
     c.est[p.id] = e;
-    if (first && !e.error) drawOptimize();                         // the header, warnings and buttons need it
+    if (first && !e.error) { drawOptimize(); if (e.raw) return estimateAll(); }   // header, warnings, buttons — and RAW shows Lossless
     else { const el = $(`#optModal [data-est="${CSS.escape(p.id)}"]`); if (el) el.innerHTML = estText(e); }
   }
 }
 function optChange(e) {
   const c = OPT.cur; if (!c) return;
-  if (e.target.name === 'optPreset') { c.preset = e.target.value; return; }
+  if (e.target.name === 'optPreset') { c.preset = e.target.value; return drawOptimize(); }   // (the RAW warning depends on it)
+  if (['optNewMode', 'optNewSub', 'optNewGray', 'optNewQ', 'optNewS', 'optNewName'].includes(e.target.id)) {
+    const name = $('#optNewName').value;
+    Object.assign(c, { newMode: $('#optNewMode').value, newSub: $('#optNewSub').value, newGray: $('#optNewGray').checked,
+      newQ: +$('#optNewQ').value, newS: +$('#optNewS').value, advOpen: true });
+    if (e.target.id === 'optNewMode') { drawOptimize(); $('#optNewName').value = name; }   // lossless greys out what doesn't apply
+    return;
+  }
   if (e.target.id === 'optKeep') { c.keep = e.target.checked; return; }
   if (e.target.id === 'optShrink' || e.target.id === 'optEdge') {
     c.shrink = $('#optShrink').checked; c.maxEdge = +$('#optEdge').value || 4000;
@@ -3753,7 +3612,9 @@ async function savePreset() {
   const c = OPT.cur, err = $('#optNewErr');
   c.newQ = +$('#optNewQ').value; c.newS = +$('#optNewS').value;
   try {
-    const p = await jsonFetch('POST', '/api/optimize/presets', { name: $('#optNewName').value, quality: c.newQ, speed: c.newS });
+    c.newMode = $('#optNewMode').value; c.newSub = $('#optNewSub').value; c.newGray = $('#optNewGray').checked;
+    const p = await jsonFetch('POST', '/api/optimize/presets', { name: $('#optNewName').value, quality: c.newQ, speed: c.newS,
+      mode: c.newMode, subsampling: c.newSub, grayscale: c.newGray });
     c.presets = [...c.presets, p]; c.preset = p.id; c.adding = false;
   } catch (e) { err.textContent = e.message; return; }
   drawOptimize(); estimateAll();

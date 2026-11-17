@@ -10,6 +10,6 @@ services:
       - ./config:/config       # index, reading progress, thumbnail & panel cache
     environment:
       - SCAN_INTERVAL=600      # seconds between automatic library rescans
-      - JXL_CACHE_DAYS=7       # JPEG XL books converted to PNG are kept this long after their last read
+      - TRANSCODE_CACHE_DAYS=7 # JPEG XL / HEIC books converted to PNG are kept this long after their last read
       - OPTIMIZE_KEEP_DAYS=14  # ✨ Optimize: kept originals (for Undo) are deleted after this many days
     restart: unless-stopped
