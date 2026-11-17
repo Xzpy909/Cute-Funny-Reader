@@ -683,7 +683,8 @@ def credits_from_name(stem: str, numbered: bool) -> tuple[str, str]:
     inner = re.sub(r"\s+", " ", m.group(1)).strip()
     ca = CIRCLE_ARTIST.match(inner)
     circle, artist = (ca.group(1).strip(), ca.group(2).strip()) if ca else ("", inner)
-    if numbered and not ca:
+    dashed = re.match(r"\s*-\s", stem[m.end():]) is not None   # "[Author] - Series - Ch. 01" (docs/NAMING.md)
+    if numbered and not ca and not dashed:
         return "", ""
     junk = lambda v: (not v or v.lower() in NOT_A_CREDIT
                       or re.fullmatch(r"[\d\s._\-/]+|c\d{2,3}|\d{3,4}[pk]|v\d+|\d+x\d+", v, re.I) is not None)
@@ -849,6 +850,12 @@ def same_case(parent: Path, name: str) -> str:
         return name
 
 
+def set_of(work: str) -> str:
+    """The set in a Cosplay work title: "Starfall Bunny - Bonus" → "Starfall Bunny" (the variant is after the dash)."""
+    head, sep, tail = work.rpartition(" - ")
+    return tidy(head) if sep and tidy(head) and tidy(tail) else work
+
+
 def cosplay_plan(root: Path, names: list[str]) -> dict[str, dict]:
     """Where uploaded Cosplay sets go: {name: {cosplayer, set}}. The name itself becomes the variant.
     Variants are found among the uploaded siblings of the same cosplayer, and an upload also joins a set
@@ -866,11 +873,13 @@ def cosplay_plan(root: Path, names: list[str]) -> dict[str, dict]:
             existing = {p.name.lower(): p.name for p in here.iterdir() if p.is_dir() and not p.name.startswith(".")}
         except OSError:
             existing = {}
-        found = variant_groups([parsed[n]["work"] for n in group])
+        # "Cosplayer - Set - Variant" (docs/NAMING.md): a second " - " marks the variant outright
+        works = [set_of(parsed[n]["work"]) for n in group]
+        found = variant_groups(works)
         for i, n in enumerate(group):
-            work = parsed[n]["work"]
+            work = works[i]
             if i in found:
-                set_name = found[i][0]
+                set_name = tidy(found[i][0]) or found[i][0]
             else:
                 set_name = joins_existing(work, existing) or work
             set_name = existing.get(set_name.lower(), set_name)
@@ -1431,7 +1440,7 @@ class Library:
                             "added": int(d.stat().st_mtime)})
         return out
 
-    # ---- edited details (stored in /config, files are never rewritten)
+    # ---- edited details: kept in the database until written into the files on request (write_edits)
     EDITABLE = ("author", "publisher", "genres", "tags", "summary", "year", "release", "direction")
 
     def _release(self, folder: Path):
@@ -1456,9 +1465,45 @@ class Library:
             if b["rel"] == old_rel or b["rel"].startswith(old_rel + "/"):
                 b["rel"] = new_rel + b["rel"][len(old_rel):]
 
+    COVER_KEYS = ("coverPage", "seriesCover")
+
+    @staticmethod
+    def first_photo(b: dict) -> int:
+        return next((i for i, n in enumerate(b.get("entries") or []) if not is_video(n)), -1)
+
+    def file_cover_page(self, b: dict) -> int:
+        """The cover page the file itself names (or its first photo)."""
+        ents = b.get("entries") or []
+        return ents.index(b["cover"]) if b.get("cover") in ents else self.first_photo(b)
+
     def effective(self, b: dict) -> dict:
+        """The book as the reader shows it: the file's own details with the user's edits on top.
+        Edits live in the database (instant, whatever the file's size) until written into the files on request
+        (write_edits) — "unsaved" marks a book whose file could take them but doesn't hold them yet."""
         e = self.edits.get(b["id"])
-        return {**b, **e, "edited": True} if e else b
+        if not e:
+            return b
+        out = {**b, "edited": True, "unsaved": b.get("src") in self.WRITABLE}
+        for k, v in e.items():
+            if k == "direction":
+                if v:
+                    out["rtl"] = v == "rtl"
+            elif k == "coverPage":
+                ents = b.get("entries") or []
+                i = v if isinstance(v, int) and v >= 0 else self.first_photo(b)
+                if 0 <= i < len(ents) and not is_video(ents[i]):
+                    out["cover"] = ents[i]
+            elif k == "seriesCover":
+                out["seriesCover"] = bool(v)
+            else:
+                out[k] = v
+        return out
+
+    def cover_tag(self, b: dict) -> str:
+        """Part of a cover's cache key: changes when the chosen cover page does."""
+        e = self.effective(b)
+        ents = e.get("entries") or []
+        return str(ents.index(e["cover"])) if e.get("cover") in ents else ""
 
     WRITABLE = ("cbz", "zip", "cb7", "folder")
 
@@ -1566,8 +1611,8 @@ class Library:
 
     def set_cover(self, sid: str, book_id: str | None, page: int | None):
         """Pick the series' cover: page `page` of book `book_id` (a photo, not a video) — or book_id None to go
-        back to the default (first book, first photo). Stored in metadata.json: "thumbnail" (page) on that book,
-        "seriesCover": true when it isn't the series' first book. Only books whose flags change are rewritten."""
+        back to the default (first book, first photo). Kept in the database (see effective) — only where it differs
+        from what the files say — until written into metadata.json ("thumbnail", "seriesCover") on request."""
         books = self.series_books(sid)
         if not books:
             raise KeyError(sid)
@@ -1580,24 +1625,58 @@ class Library:
                 raise ValueError("This book can't hold a cover choice (only archives and photo sets can)")
             if page is None or not (0 <= page < len(target["entries"])) or is_video(target["entries"][page]):
                 raise ValueError("Pick a photo page as the cover")
-        errors = []
         for x in books:
-            want_flag = target is not None and x["id"] == target["id"] and len(books) > 1
-            want_thumb = page if target is not None and x["id"] == target["id"] else self._KEEP
-            if book_id is None and x.get("format") == "images":
-                want_thumb = None                      # reset: every book back to its first photo
-            if bool(x.get("seriesCover")) == want_flag and want_thumb is self._KEEP:
-                continue                               # nothing changes in this file
-            if x.get("src") not in self.WRITABLE:
+            if x.get("src") not in self.WRITABLE or x.get("format") != "images":
                 continue
+            e = dict(self.edits.get(x["id"]) or {})
+            flag = target is not None and x["id"] == target["id"] and len(books) > 1
+            if flag == bool(x.get("seriesCover")):
+                e.pop("seriesCover", None)
+            else:
+                e["seriesCover"] = flag
+            want = page if target is not None and x["id"] == target["id"] else \
+                self.first_photo(x) if book_id is None else None          # None: this book's page stays
+            if want is not None:
+                if want == self.file_cover_page(x):
+                    e.pop("coverPage", None)
+                else:
+                    e["coverPage"] = want
+            if e:
+                self.edits.put(x["id"], e)
+            else:
+                self.edits.delete(x["id"])
+        self.rev += 1
+
+    def write_edits(self, sid: str) -> int:
+        """Write the series' saved edits (details, tags, cover choice) into its files' metadata.json, then
+        forget them — the files now say the same. Returns how many files were written."""
+        books = self.series_books(sid)
+        if not books:
+            raise KeyError(sid)
+        done, errors = 0, []
+        for b in books:
+            e = self.edits.get(b["id"])
+            if not e or b.get("src") not in self.WRITABLE:
+                continue
+            fields = {k: v for k, v in e.items() if k in self.EDITABLE}
+            thumb, flag = self._KEEP, self._KEEP
+            if "coverPage" in e:
+                i = e["coverPage"] if isinstance(e["coverPage"], int) and e["coverPage"] >= 0 else self.first_photo(b)
+                thumb = None if i == self.first_photo(b) else i
+            if "seriesCover" in e:
+                flag = bool(e["seriesCover"])
             try:
-                self.write_metadata(x, {}, thumbnail=want_thumb, series_cover=want_flag)
-            except Exception as e:  # noqa: BLE001
-                log.warning("could not write the cover choice into %s: %s", x["rel"], e)
-                errors.append(x["file"])
-        self.scan()
+                self.write_metadata(b, fields, thumbnail=thumb, series_cover=flag)
+                self.edits.delete(b["id"])
+                done += 1
+            except Exception as ex:  # noqa: BLE001
+                log.warning("could not write metadata into %s: %s", b["rel"], ex)
+                errors.append(b["file"])
+        if done:
+            self.scan()
         if errors:
             raise OSError("Couldn’t write into: " + ", ".join(errors[:5]))
+        return done
 
     def edit_series(self, sid: str, fields: dict, reset: bool = False) -> int:
         books = self.series_books(sid)
@@ -1620,7 +1699,6 @@ class Library:
             clean[k] = v
         if "direction" in clean and clean["direction"] not in ("rtl", "ltr"):
             clean["direction"] = ""
-        errors = []
         for b in books:
             per = dict(clean)
             if (t_add or t_rem) and "tags" not in per:
@@ -1633,23 +1711,12 @@ class Library:
                     per["tags"] = cur + [t for t in t_add if t.lower() not in have]
             if reset:
                 self.edits.delete(b["id"])
-            elif per and b.get("src") in self.WRITABLE:
-                try:
-                    self.write_metadata(b, per)         # into the file itself
-                    self.edits.delete(b["id"])          # (older app-side edits are now inside the file)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("could not write metadata into %s: %s", b["rel"], e)
-                    errors.append(b["file"])
-            elif per:                                   # standalone videos / EPUBs: kept app-side
-                ov = {**self.edits.get(b["id"], {}), **per}
-                if "direction" in ov:
-                    d = ov.pop("direction")
-                    if d: ov["rtl"] = d == "rtl"
-                    else: ov.pop("rtl", None)
+            elif per:                                   # into the database: instant, whatever the file's size —
+                ov = {**self.edits.get(b["id"], {}), **per}     # written into the files on request (write_edits)
+                if "direction" in per:
+                    ov.pop("rtl", None)                 # (older edits kept the direction as "rtl")
                 self.edits.put(b["id"], ov)
-        self.scan()
-        if errors:
-            raise OSError("Couldn’t write into: " + ", ".join(errors[:5]))
+        self.rev += 1
         return len(books)
 
     # ---- collections
@@ -3071,7 +3138,7 @@ class Library:
     def stack_back(self, books: list[dict]) -> bytes | None:
         from PIL import ImageDraw, ImageEnhance, ImageFilter
         books = books[:2]
-        key = "-".join(f"{b['id']}-{b['mtime']}" for b in books)
+        key = "-".join(f"{b['id']}-{b['mtime']}" for b in books) + "-c" + ".".join(self.cover_tag(b) for b in books)
         f = self.thumb_dir / f"{key}-stack-{self.STACK_W}.webp"
         if f.exists():
             return f.read_bytes()
@@ -3108,6 +3175,7 @@ class Library:
         return out
 
     def cover(self, b: dict, w: int) -> bytes | None:
+        b = self.effective(b)                          # a cover page chosen in the reader counts
         if self._video_only(b):
             w = min(THUMB_WIDTHS, key=lambda x: abs(x - w))
             f = self.thumb_dir / f"{b['id']}-{b['mtime']}-vcover-{w}.webp"

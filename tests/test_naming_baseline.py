@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from conftest import jpeg
 
-GAP = pytest.mark.xfail(strict=True, reason="baseline not handled yet")
+GAP = pytest.mark.xfail(strict=True, reason="baseline not handled yet")   # for the next gap found (none open)
 
 
 # ---- Cosplay: [Photographer / Publisher] Cosplayer - Set - Variant.zip -------------------------------------
@@ -27,8 +27,8 @@ def test_cosplay_without_variant(name, circle, cosplayer, set_, lib, tmp_path):
 
 
 @pytest.mark.parametrize("name, circle", [
-    pytest.param("[Lumen Studio] Mirelle - Starfall Bunny - Bonus", "Lumen Studio", marks=GAP),
-    pytest.param("Mirelle - Starfall Bunny - Bonus", "", marks=GAP),
+    ("[Lumen Studio] Mirelle - Starfall Bunny - Bonus", "Lumen Studio"),
+    ("Mirelle - Starfall Bunny - Bonus", ""),
 ])
 def test_cosplay_with_variant(name, circle, lib):
     """` - Variant` at the end: the set is what comes before it — never "Starfall Bunny -"."""
@@ -62,7 +62,7 @@ def _scan(tmp_path, monkeypatch, name):
 @pytest.mark.parametrize("name, number, author, publisher", [
     ("(C105) [Moonforge (Mirelle)] Starfall Academy - Ch. 03 [English].cbz", 3, "Mirelle", "Moonforge"),
     ("[Moonforge (Mirelle)] Starfall Academy - Ch. 01.cbz", 1, "Mirelle", "Moonforge"),
-    pytest.param("[Mirelle] - Starfall Academy - Ch. 01.cbz", 1, "Mirelle", "", marks=GAP),
+    ("[Mirelle] - Starfall Academy - Ch. 01.cbz", 1, "Mirelle", ""),
 ])
 def test_manga(name, number, author, publisher, tmp_path, monkeypatch):
     b = _scan(tmp_path, monkeypatch, name)
@@ -70,3 +70,10 @@ def test_manga(name, number, author, publisher, tmp_path, monkeypatch):
     assert b.get("number") == number and b.get("kind") == "chapter"
     assert (b.get("author") or "") == author
     assert (b.get("publisher") or "") == publisher
+
+
+def test_cosplay_variants_side_by_side(lib):
+    """Two variants of one set dropped together: one set folder, no stray dash."""
+    from app import library as L
+    names = ["[Lumen Studio] Mirelle - Starfall Bunny - Bonus", "[Lumen Studio] Mirelle - Starfall Bunny - Normal"]
+    assert {v["set"] for v in L.cosplay_plan(L.LIB_ROOT, names).values()} == {"Starfall Bunny"}

@@ -1,6 +1,5 @@
 Speed, in order of likely impact
 
-Stop rewriting whole archives for a tag or cover edit. Keep edits in the database and write them into files only on request.
 Clean-up
 Split the big files. app.js is one ~240 KB file with global state and one giant click handler. library.py (~160 KB) mixes parsing, scanning, file moves, caches and transcoding. The CSS is hand-minified one-liners.
 Keep the name-parsing rules in one place. They exist in both JavaScript and Python and have already drifted (the Name Ch.1 bug). The server already plans Cosplay uploads (cosplay-plan); the browser still has its own planner too. The server should plan all uploads, with the browser only showing the plan.

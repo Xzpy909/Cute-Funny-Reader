@@ -21,8 +21,10 @@ const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
 // What things are called, per library type — the only place these words live.
 //   s: a group of books   b: one book   ch: what you page through   g: a folder of groups (🗂️)
 const VOCAB = {
-  comics:  { s: 'series',     b: 'book', ch: 'chapter', g: 'collection', G_BADGE: 'COLLECTION' },
-  cosplay: { s: 'set',        b: 'variant', ch: 'variant', g: 'cosplayer', G_BADGE: 'COSPLAYER' },   // circle → metadata
+  comics:  { s: 'series',     b: 'book', ch: 'chapter', g: 'collection', G_BADGE: 'COLLECTION',
+             author: 'Author', authorHint: 'Writer / artist', pub: 'Publisher / group', by: a => 'by ' + a, from: p => p },
+  cosplay: { s: 'set',        b: 'variant', ch: 'variant', g: 'cosplayer', G_BADGE: 'COSPLAYER',   // circle → metadata
+             author: 'Cosplayer', authorHint: 'Who is in the photos', pub: 'Photographer / publisher', by: a => a, from: p => '📷 ' + p },
 };
 const V = lid => VOCAB[lid && isCosplay(lid) ? 'cosplay' : 'comics'];
 // "all libraries" views: Cosplay words only when every library is a Cosplay one
@@ -126,7 +128,8 @@ function workLabel(method, url, body) {
     return `Renaming ${vc.g} · ${plural(colN, vc.s)}…`;
   }
   if (url.startsWith('/api/series/')) {
-    if (url.endsWith('/details')) return `Saving details into ${plural(S.seriesById?.[id]?.books.length || 1, 'file')}…`;
+    if (url.endsWith('/details')) return 'Saving details…';
+    if (url.endsWith('/write')) return `Writing details into ${plural(S.seriesById?.[id]?.books.filter(b => b.unsaved).length || 1, 'file')}…`;
     if (url.endsWith('/move')) return `Moving ${sName || vs.s}…`;
     if (method === 'DELETE') return `Deleting ${sName || vs.s}…`;
     return `Renaming ${sName || vs.s}…`;
@@ -157,7 +160,7 @@ const api = {
   post(u) { return fetch(u, { method: 'POST' }).then(r => r.json()).catch(() => ({})); },
 };
 const URLS = {
-  cover: (b, w = 480) => `/api/books/${b.id}/cover?w=${w}&v=${b.mtime}`,
+  cover: (b, w = 480) => `/api/books/${b.id}/cover?w=${w}&v=${b.mtime}-${b.coverPage ?? ''}`,   // a new cover choice = a new address
   page: (b, n) => `/api/books/${b.id}/pages/${n}?v=${b.mtime}`,
   thumb: (b, n, w = 200) => `/api/books/${b.id}/thumbs/${n}?w=${w}&v=${b.mtime}`,
 };
@@ -666,7 +669,7 @@ function renderHome() {
         <h1 class="${s.name.length > 60 ? 'xl' : s.name.length > 32 ? 'l' : ''}">${escWrap(s.name)}</h1>
         <div class="hero-meta">${escWrap(hb.label)}${hb.title ? ' · ' + escWrap(hb.title) : ''} · ${progressText(hb)}</div>
         <div class="bar"><i style="width:${Math.round(bookFrac(hb) * 100)}%"></i></div>
-        <p class="blurb">${esc((s.summary || `${countLabel(s)} in your ${libName(s.library)} library${s.author ? ' · by ' + s.author : ''}.`).slice(0, 260))}</p>
+        <p class="blurb">${esc((s.summary || `${countLabel(s)} in your ${libName(s.library)} library${s.author ? ' · ' + V(s.library).by(s.author) : ''}.`).slice(0, 260))}</p>
         <div class="actions">
           <button class="btn-primary" data-open="${hb.id}">${ico('play')} ${started ? 'Resume' : 'Start reading'}</button>
           ${s.books.length > 1 ? `<button class="btn-ghost" data-series="${s.id}">${ico('book', 17)} Series</button>` : ''}
@@ -729,7 +732,7 @@ function renderHome() {
     if (!covers.length) return '<div class="stk s0 emptycol">🗂️</div>';
     const back = covers.slice(1).map(coverBook);
     if (back.length && back.every(b => b.hasCover && b.format !== 'video'))
-      return `<div class="stk s0">${seriesCover(covers[0], 200)}</div><img class="stkback" src="/api/stack?books=${back.map(b => b.id).join(',')}&v=${back.map(b => b.mtime).join('-')}" alt="" loading="lazy" draggable="false">`;
+      return `<div class="stk s0">${seriesCover(covers[0], 200)}</div><img class="stkback" src="/api/stack?books=${back.map(b => b.id).join(',')}&v=${back.map(b => `${b.mtime}.${b.coverPage ?? ''}`).join('-')}" alt="" loading="lazy" draggable="false">`;
     return covers.map((x, j) => `<div class="stk s${j}">${seriesCover(x, 200)}</div>`).join('');
   };
   const colCards = cols.map((c, k) => {
@@ -1022,7 +1025,7 @@ function renderSeries(sid) {
       <div class="hero-info">
         <div class="eyebrow">${eyebrow}</div>
         <h1 class="${s.name.length > 60 ? 'xl' : ''}">${escWrap(s.name)}</h1>
-        ${s.author || s.publisher ? `<div class="hero-meta">${[s.author && 'by ' + esc(s.author), s.publisher && esc(s.publisher)].filter(Boolean).join(' · ')}</div>` : ''}
+        ${s.author || s.publisher ? `<div class="hero-meta">${[s.author && V(s.library).by(esc(s.author)), s.publisher && V(s.library).from(esc(s.publisher))].filter(Boolean).join(' · ')}</div>` : ''}
         ${tagChips(s.genres, s.tags, 16)}
         ${s.summary ? `<p class="blurb">${esc(s.summary.slice(0, 420))}</p>` : ''}
         <div class="stats"><div><b>${s.books.length}</b>${unit}</div><div><b>${i.read}</b>finished</div><div><b>${Math.round(i.frac * 100)}%</b>complete</div></div>
@@ -2138,23 +2141,23 @@ function openDetails(sid) {
   const r0 = seriesPrefs[sid]?.rtl ?? s.books[0].rtl;
   init.direction = r0 == null ? '' : r0 ? 'rtl' : 'ltr';
   DM = { sid, s, init, genres: [...init.genres], tags: [...init.tags], dir: init.direction || 'auto' };
-  const cos = isCosplay(s.library), edited = s.books.some(b => b.edited);
+  const cos = isCosplay(s.library), edited = s.books.some(b => b.edited), unsaved = s.books.filter(b => b.unsaved).length;
   const f = $('#detForm');
   f.innerHTML = `
-    <div class="dhead"><span class="dcover">${seriesCover(s, 160)}</span><div><h3>Edit details</h3><span class="hintline">${esc(libName(s.library))} · ${countLabel(s)}${edited ? ' · <b class="edtag">edited</b>' : ''}</span>
+    <div class="dhead"><span class="dcover">${seriesCover(s, 160)}</span><div><h3>Edit details</h3><span class="hintline">${esc(libName(s.library))} · ${countLabel(s)}${edited ? ` · <b class="edtag" title="${unsaved ? 'Kept in the reader — not written into the files yet' : 'Kept in the reader (this kind of file can’t hold details)'}">edited</b>` : ''}</span>
       ${coverBooks(s).length ? '<button type="button" class="btn-sm editcover" data-editcover>🖼 Edit cover</button>' : ''}</div></div>
     <div class="f"><label for="dName">Name</label><input type="text" id="dName" maxlength="120" value="${esc(init.name)}"><span class="hintline">Renames the folder / file on disk · progress is kept</span></div>
-    <div class="f2"><div class="f"><label for="dAuthor">Author</label><input type="text" id="dAuthor" value="${esc(init.author)}" placeholder="Writer / artist"></div>
-      <div class="f"><label for="dPub">Publisher / group</label><input type="text" id="dPub" value="${esc(init.publisher)}" placeholder="—"></div></div>
+    <div class="f2"><div class="f"><label for="dAuthor">${V(s.library).author}</label><input type="text" id="dAuthor" value="${esc(init.author)}" placeholder="${V(s.library).authorHint}"></div>
+      <div class="f"><label for="dPub">${V(s.library).pub}</label><input type="text" id="dPub" value="${esc(init.publisher)}" placeholder="—"></div></div>
     <div class="f">Genres <span class="hintline">The first one is shown on the cover badge</span><div class="chipin" data-list="genres"></div></div>
     <div class="f">Tags <span class="hintline">Enter or comma adds · type <code>tag:f</code> / <code>tag:m</code> for tag ♀ / tag ♂</span><div class="chipin" data-list="tags"></div></div>
     <div class="f2"><div class="f"><label for="dRel">Release format</label><input type="text" id="dRel" value="${esc(init.release)}" placeholder="e.g. Web, Digital, Tankōbon"></div>
       <div class="f"><label for="dYear">Year</label><input type="text" id="dYear" inputmode="numeric" maxlength="4" value="${esc(init.year)}" placeholder="—"></div></div>
     <div class="f"><label for="dSum">Summary</label><textarea id="dSum" rows="4" placeholder="—">${esc(init.summary)}</textarea></div>
     ${cos ? '' : `<div class="f">Reading direction<div class="seg dseg"><button type="button" data-ddir="auto">Auto</button><button type="button" data-ddir="ltr">Left → right</button><button type="button" data-ddir="rtl">Right ← left</button></div></div>`}
-    <span class="hintline">Saved into each file as <code>metadata.json</code>${s.books.some(b => b.src === 'cbz' || b.src === 'cb7' || b.src === 'zip') ? ' (ComicInfo.xml is folded into it)' : ''}.</span>
+    <span class="hintline">Saved in the reader at once. <b>Write into files</b> puts them into each file’s <code>metadata.json</code>${s.books.some(b => b.src === 'cbz' || b.src === 'cb7' || b.src === 'zip') ? ' (ComicInfo.xml is folded into it) — that rewrites each archive, so it takes a while for big ones' : ''}.</span>
     <div class="formerr" id="detErr"></div>
-    <div class="formfoot">${edited ? '<button type="button" class="btn-ghost" id="detReset" title="Forget your edits and use what the files say">↺ Reset to file</button>' : ''}<div class="grow"></div>
+    <div class="formfoot">${edited ? '<button type="button" class="btn-ghost" id="detReset" title="Forget your edits and use what the files say">↺ Reset to file</button>' : ''}${unsaved ? `<button type="button" class="btn-ghost" id="detWrite" title="Put the saved details and cover choice into the files (metadata.json)">💾 Write into ${plural(unsaved, 'file')}</button>` : ''}<div class="grow"></div>
       <button type="button" class="btn-ghost" data-closedet>Cancel</button><button type="submit" class="btn-primary">Save</button></div>`;
   renderChipLists(); syncDetDir();
   $('#detModal').classList.add('open');
@@ -2181,7 +2184,7 @@ function openCoverPicker(sid) {
       <div class="cvgrid">${Array.from({ length: book.pages }, (_, i) => vids.has(i)
         ? `<div class="cvtile vid" title="Videos can't be covers"><span>▶</span><i>${i + 1}</i></div>`
         : `<button type="button" class="cvtile ${i === chosen ? 'on' : ''}" data-cvpage="${i}" title="Page ${i + 1}"><img loading="lazy" src="${URLS.thumb(book, i, 200)}" alt=""><i>${i + 1}</i></button>`).join('')}</div>
-      <div class="cvfoot"><span class="hintline">Saved into ${books.length > 1 ? 'that ' + unit + '’s' : 'the file’s'} <code>metadata.json</code></span><div class="grow"></div>
+      <div class="cvfoot"><span class="hintline">Saved in the reader · <b>Write into files</b> in Edit details puts it into ${books.length > 1 ? 'that ' + unit + '’s' : 'the file’s'} <code>metadata.json</code></span><div class="grow"></div>
         <button type="button" class="btn-ghost" data-cvreset>↺ Default cover</button><button type="button" class="btn-ghost" data-cvclose>Cancel</button></div></div>`;
     o.querySelector('#cvBook')?.addEventListener('change', e => { book = books.find(b => b.id === e.target.value) || book; paint(); });
   };
@@ -2193,6 +2196,10 @@ function openCoverPicker(sid) {
     await load();
     const ns = S.seriesById[sid]; const box = $('#detForm .dcover');
     if (ns && box) box.innerHTML = seriesCover(ns, 160);
+    const unsaved = ns ? ns.books.filter(x => x.unsaved).length : 0;   // the form stays as typed; only the button follows
+    $('#detWrite')?.remove();
+    if (unsaved && box) $('#detForm .formfoot .grow').insertAdjacentHTML('beforebegin',
+      `<button type="button" class="btn-ghost" id="detWrite" title="Put the saved details and cover choice into the files (metadata.json)">💾 Write into ${plural(unsaved, 'file')}</button>`);
   };
   o.addEventListener('click', e => {
     if (e.target.closest('[data-cvclose]')) return close();
@@ -2234,6 +2241,12 @@ $('#detForm').addEventListener('click', async e => {
   const dd = e.target.closest('[data-ddir]'); if (dd) { DM.dir = dd.dataset.ddir; return syncDetDir(); }
   if (e.target.closest('[data-closedet]')) return $('#detModal').classList.remove('open');
   if (e.target.closest('[data-editcover]')) return openCoverPicker(DM.sid);
+  if (e.target.closest('#detWrite')) {
+    const b = e.target.closest('#detWrite'); b.disabled = true; b.textContent = 'Writing…';
+    try { const d = await jsonFetch('POST', `/api/series/${DM.sid}/write`); appToast(`Written into ${plural(d.files, 'file')}`); b.remove(); }
+    catch (err) { $('#detErr').textContent = err.message; b.disabled = false; b.textContent = '💾 Write into files'; }
+    return load();                                    // (the form keeps whatever is typed in it)
+  }
   if (e.target.closest('#detReset')) {
     try { await jsonFetch('PATCH', `/api/series/${DM.sid}/details`, { reset: true }); } catch (err) { $('#detErr').textContent = err.message; return; }
     $('#detModal').classList.remove('open'); appToast('Details reset to what the files say'); return load();
@@ -2257,8 +2270,7 @@ $('#detForm').addEventListener('submit', async e => {
   if (tagsRemove.length) fields.tagsRemove = tagsRemove;
   if (tagsAdd.length || tagsRemove.length) fields.tagsBase = v.tags;   // what untagged chapters inherit
   const btn = e.target.querySelector('[type=submit]'); btn.disabled = true;
-  const n = DM.s.books.length;
-  if (Object.keys(fields).length) btn.textContent = n > 1 ? `Saving into ${n} files…` : 'Saving…';
+  if (Object.keys(fields).length) btn.textContent = 'Saving…';
   let sid = DM.sid;
   try {
     if (Object.keys(fields).length) await jsonFetch('PATCH', `/api/series/${sid}/details`, { fields });

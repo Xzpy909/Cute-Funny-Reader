@@ -1,21 +1,6 @@
 TO DO
 =====
 
-NAMING BASELINE  (docs/NAMING.md — each gap is an xfail in tests/test_naming_baseline.py; remove the mark when fixed)
----------------
-[ ] Cosplay "Cosplayer - Set - Variant": the trailing " - Variant" must split off as the variant.
-    Today the set folder comes out as "Starfall Bunny -" (stray dash) and the variant is lost.
-    Both with and without the leading [Photographer / Publisher].
-[ ] Manga "[Author] - Series - Ch. 01": the " - " right after the bracket marks it as the author.
-    Today the author is dropped (a bare [Name] before a numbered chapter is treated as a scanlation group).
-
-COSPLAY — EDIT DETAILS
-----------------------
-[ ] The Edit details form uses the comic labels in Cosplay libraries too:
-      "Author"            → should be "Cosplayer"
-      "Publisher / group" → should be "Photographer / publisher"
-    (labels and placeholders only for Cosplay; comics / manga keep theirs)
-
 OPTIMIZE
 --------
 [ ] "Advanced" section in the Optimize dialog (Design 3): quality, encoder speed, colour auto / 4:4:4 / 4:2:0,
