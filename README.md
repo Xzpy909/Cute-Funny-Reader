@@ -118,7 +118,7 @@ which every current browser shows directly and which is usually much smaller tha
   keeps its name, so reading progress, favourites and the chosen cover stay.
 - **Keep originals** copies the original to `config/originals` for `OPTIMIZE_KEEP_DAYS` (default 14): **Undo optimize**
   in the menu puts it back. A page that wouldn't get smaller, GIFs and videos are left as they are.
-- Supported: `.cbz`, `.zip` and photo folders (`.cb7` sets are skipped for now).
+- Supported: `.cbz`, `.zip`, `.cb7` and photo folders.
 - **A whole library:** right-click the library → **Optimize library…** (also in Library settings, with how much is
   left to convert).
 - **New uploads:** Library settings → *New uploads → AVIF · preset* converts whatever is added from then on by itself.
@@ -128,9 +128,14 @@ which every current browser shows directly and which is usually much smaller tha
   is gone then), and **When to optimize**: *Only between 01:00 and 07:00* makes jobs wait for those hours — each
   waiting job has a **Run now** button.
 
-**Presets:** **Default** (quality 70, speed 6) is built in and can't be deleted — the baseline. Make your own with
-**+ New preset** in the dialog (name, quality 0–100, speed 0–10: lower is smaller but slower) and delete them with ×.
-They're kept in `config/optimize-presets.json`. A running job keeps the settings it started with.
+**Presets:** two are built in and can't be deleted — **Default** (AVIF, quality 70, speed 6, full 4:4:4 colour, black-and-white
+pages saved as grayscale) is the baseline, and **Lossless** (shown when the selection holds lossless PNG / BMP / TIFF
+books) converts those pages to pixel-exact **lossless WebP** — about 30% smaller than PNG, where lossless AVIF barely
+beats PNG. JPEG / AVIF pages are never re-encoded losslessly (they would only grow).
+Make your own with **+ New preset** in the dialog (name, quality 0–100, speed 0–10: lower is smaller but slower);
+its **Advanced** part sets the format (AVIF / lossless WebP), colour (auto = 4:4:4, 4:4:4, 4:2:0) and black-and-white
+detection. Delete them with ×. They're kept in `config/optimize-presets.json`. A running job keeps the settings it
+started with.
 "Shrink huge photos" is off unless you tick it.
 
 ## Reader features
@@ -163,9 +168,11 @@ They're kept in `config/optimize-presets.json`. A running job keeps the settings
 
 **Edit details**
 - ⋯ → **Edit details…** on a series or set: author, publisher, genres, tags, release format, year, summary, reading direction (and the name, which renames the folder/file)
-- Saved **into the files** as `metadata.json` — inside `.cbz`/`.zip`/`.cb7` archives (rewritten, images untouched) or next to the photos of a folder set. An existing ComicInfo.xml is folded into it and removed; keys the app doesn't know (`id`, `related`, …) are kept
+- In Cosplay libraries the fields are **Cosplayer** and **Photographer / publisher**
+- Saved **in the reader** at once (the database in `/config`), whatever the files' size — the same goes for the cover chosen with 🖼 Edit cover
+- **💾 Write into files** (in Edit details, when there's something to write) puts them into each file as `metadata.json` — inside `.cbz`/`.zip`/`.cb7` archives (rewritten, images untouched, so it takes a while for big ones) or next to the photos of a folder set. An existing ComicInfo.xml is folded into it and removed; keys the app doesn't know (`id`, `related`, …) are kept. **↺ Reset to file** forgets the saved edits instead
 - In the tag box `stockings:f` / `beard:m` become `stockings ♀` / `beard ♂`
-- Standalone video files and EPUBs can't hold a metadata.json — their edits are kept in `/config/edits.json`
+- Standalone video files and EPUBs can't hold a metadata.json — their edits always stay in the reader
 
 **metadata.json**
 - Read from `.cbz`, `.cb7` and photo folders (metadata.json wins over ComicInfo.xml where both exist; tags are combined)

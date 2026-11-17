@@ -1,19 +1,4 @@
 TO DO
 =====
 
-OPTIMIZE
---------
-[ ] "Advanced" section in the Optimize dialog (Design 3): quality, encoder speed, colour auto / 4:4:4 / 4:2:0,
-    grayscale detection on/off, max size.
-[ ] Lossless option for PNG / BMP / TIFF (RAW) series — use WebP LOSSLESS, not AVIF.
-    Measured 2026-11 on library pages (pixels decoded, then re-encoded losslessly; size vs optimized PNG):
-        WebP lossless 69%  ·  AVIF lossless 97%  ·  JPEG XL lossless 59%
-      - AVIF's lossless mode barely beats PNG. Pillow can't even make true lossless AVIF
-        (quality 100 still changes pixels); it needs libavif's identity-matrix mode.
-      - WebP lossless via Pillow (lossless=True, method=6) is pixel-exact, and every browser shows it.
-        Slow-ish: ~6 s per 1 MP page at method 6 — fine for the background queue.
-      - JPEG XL is smaller still, but not every browser shows it (the reader would have to transcode it
-        when you read) — so not the default.
-      - Lossless is only for lossless sources: re-encoding a JPEG / AVIF losslessly makes it 5–8x BIGGER.
-        Keep the rule: a page whose new version isn't smaller keeps its original.
-[ ] Optimize .cb7 sets.
+(nothing open — the clean-up and redesign ideas are in "do -perf.txt")
