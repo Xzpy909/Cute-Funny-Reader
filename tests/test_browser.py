@@ -472,6 +472,33 @@ def test_top_bar_scope_and_add(home_page):
     pg.set_viewport_size({"width": 1400, "height": 760})
 
 
+def test_optimize_from_the_menu_then_undo(server, browser):
+    for pg in open_page(server, browser, "Cos"):
+        cos = "#grid .card[data-collection]"
+        pg.locator(cos, has_text="Mirelle").first.click(button="right")
+        pg.locator("#menu [data-mact=optimize]").click()
+        pg.wait_for_selector("#optModal.open .optrow")
+        assert "placeholder" in pg.inner_text("#optModal .optnote").lower()
+        pg.wait_for_function("document.querySelector('#optModal .est') && !/estimating/.test(document.querySelector('#optModal .est').textContent)")
+        assert "2 variants" in pg.inner_text("#optHead") and "−" in pg.inner_text("#optModal .est")
+        pg.click("#optModal [data-opt=compare]")
+        pg.wait_for_selector("#optCmp img.b:not([hidden])")
+        pg.wait_for_function("/AVIF · \\d/.test(document.querySelector('#optCmp .lab.r').textContent)")
+        pg.click("#optModal [data-opt=start]")
+        pg.wait_for_selector("#jobs.on")
+        pg.wait_for_function("OPT.jobs.length && OPT.jobs[0].state === 'done'", timeout=30000)
+        pg.wait_for_function("(() => { const bs = Object.values(S.books).filter(b => isCosplay(b.library)); return bs.length === 2 && bs.every(b => b.avif && b.canUndo); })()", timeout=15000)
+        assert "Done" in pg.inner_text("#jobs")
+        pg.locator(cos, has_text="Mirelle").first.click()
+        pg.wait_for_selector("#grid .card .avifpill")
+        pg.go_back(); pg.wait_for_selector(cos)
+        pg.locator(cos, has_text="Mirelle").first.click(button="right")
+        pg.locator("#menu [data-mact=unoptimize]").click()
+        pg.wait_for_function("(() => { const bs = Object.values(S.books).filter(b => isCosplay(b.library)); return bs.length === 2 && bs.every(b => !b.avif && !b.canUndo); })()", timeout=15000)
+        pg.click("#jobs [data-jact=dismiss]")
+        pg.wait_for_selector("#jobs", state="hidden")
+
+
 def test_zz_nothing_went_missing(home_page):
     names = home_page.evaluate("S.series.map(s => s.name + ':' + s.books.length + (seriesTrashed(s) ? ':trashed' : '')).sort()")
     assert names == ["Beach:1", "Maid:1", "Starfall:2", "Test Novel:2"], names

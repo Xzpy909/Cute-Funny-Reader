@@ -865,3 +865,35 @@ body.booting .app{visibility:hidden}
 .hstrip>.card{scroll-snap-align:start;min-width:0}
 .hnav{font-size:22px;line-height:1;border:1px solid var(--line)}
 @media (max-width:860px){.hstrip{grid-auto-columns:130px;gap:14px}.hnav{display:none}}
+
+/* ✨ Optimize dialog */
+.optsheet{width:min(600px,94vw);max-height:92vh;overflow-y:auto}
+.optnote{margin:0;font-size:12.5px;color:var(--mute);line-height:1.5}.optnote.warn{color:#ffb86b}
+.optlist{display:grid;gap:8px}
+.optrow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);cursor:pointer;transition:border-color .2s,background .2s}
+.optrow:has(input:checked){border-color:var(--pop);background:color-mix(in srgb,var(--pop) 10%,transparent)}
+.optrow input{accent-color:var(--pop);width:17px;height:17px;margin:0}
+.optrow .on{display:grid;gap:2px;min-width:0}.optrow .on b{font-size:14.5px;color:var(--text)}.optrow .on small{font-weight:500;color:var(--mute);font-size:12px}
+.optrow .est{font:600 13px var(--mono);color:var(--text);white-space:nowrap}.optrow .est small{color:var(--mint);font-size:12px}.optrow .est i{color:var(--mute);font-style:normal;font-weight:400}
+.optchk{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13.5px;font-weight:600;color:#cfcad8;cursor:pointer}
+.optchk input[type=checkbox]{accent-color:var(--pop);width:16px;height:16px;margin:0}
+.optchk input[type=number]{width:84px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 8px;font:600 13px var(--mono)}
+.optcmp{display:grid;gap:10px}
+.cmpview{position:relative;height:min(52vh,520px);border-radius:14px;overflow:hidden;background:#0a0a0e}
+.cmpview img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.cmpview img.b{clip-path:inset(0 0 0 var(--split,50%))}
+.cmpview .cmpline{position:absolute;top:0;bottom:0;left:var(--split,50%);width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);pointer-events:none}
+.cmpview .lab{position:absolute;top:10px;font:600 11px var(--mono);padding:4px 8px;border-radius:7px;background:rgba(0,0,0,.65);color:#fff}
+.cmpview .lab.l{left:10px}.cmpview .lab.r{right:10px}
+#optSplit{width:100%;accent-color:var(--pop)}
+.rawpill.avifpill{color:var(--mint)}
+/* the Jobs panel looks like the uploads panel */
+#jobs{position:fixed;right:18px;bottom:18px;z-index:74;width:360px;max-height:50vh;border-radius:18px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.8)}
+#jobs.on{display:flex;animation:popIn .25s var(--ease)}
+#jobs .up-h b{display:flex;align-items:center;gap:7px}
+#jobs.min{width:300px}#jobs.min .up-h{border-bottom:0;cursor:pointer;padding:11px 14px}#jobs.min .up-h .bar{flex:1;width:auto;max-width:110px}#jobs.min .up-list{display:none}
+#jobs .up-row.job{grid-template-columns:1fr auto}
+#jobs .jmeta{grid-column:1/-1;font-size:11.5px;color:var(--mute);line-height:1.4}
+#jobs .jacts{grid-column:1/-1;display:flex;gap:6px;justify-content:flex-end}
+#jobs .up-row.done .bar i{background:var(--mint)}
+@media (max-width:860px){#jobs,#jobs.min{left:12px;right:12px;width:auto}}

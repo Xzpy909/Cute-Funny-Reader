@@ -29,7 +29,7 @@ const V = lid => VOCAB[lid && isCosplay(lid) ? 'cosplay' : 'comics'];
 const Vhome = () => S.lib ? V(S.lib) : (S.libraries.length && S.libraries.every(l => isCosplay(l.id)) ? VOCAB.cosplay : VOCAB.comics);
 
 const ICONS = {
-  chevL: '<path d="M15 18l-6-6 6-6"/>', chevD: '<path d="M6 9l6 6 6-6"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', chevR: '<path d="M9 18l6-6-6-6"/>',
+  chevL: '<path d="M15 18l-6-6 6-6"/>', chevD: '<path d="M6 9l6 6 6-6"/>', spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', chevR: '<path d="M9 18l6-6-6-6"/>',
   home: '<path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>',
@@ -144,7 +144,7 @@ const _fetch = window.fetch.bind(window);   // the browser's own fetch (used dir
   const guard = (p, url) => p.then(r => { if (r.status === 401 && url.includes('/api/') && !url.includes('/api/auth/')) authLost(); return r; });
   window.fetch = (input, init = {}) => {
     const method = (init.method || 'GET').toUpperCase(), url = typeof input === 'string' ? input : input?.url || '';
-    if (method === 'GET' || !url.startsWith('/api/') || url.startsWith('/api/progress') || url.startsWith('/api/auth') || init.keepalive) return guard(_fetch(input, init), url);
+    if (method === 'GET' || !url.startsWith('/api/') || url.startsWith('/api/progress') || url.startsWith('/api/auth') || url.startsWith('/api/optimize/estimate') || url.startsWith('/api/jobs') || init.keepalive) return guard(_fetch(input, init), url);
     let body = null; try { body = typeof init.body === 'string' ? JSON.parse(init.body) : null; } catch {}
     const stop = workStart(workLabel(method, url, body));
     return guard(_fetch(input, init), url).finally(stop);
@@ -386,7 +386,8 @@ function softBlur(d, w, h, radius) {
 }
 const fmtPills = x => (x.raw ? '<span class="rawpill" title="Lossless images (PNG / BMP / TIFF)">RAW</span>' : '')
   + (x.jxl ? '<span class="rawpill" title="JPEG XL — converted to PNG when you open it">JPEG XL</span>' : '')
-  + (x.heic ? '<span class="rawpill" title="HEIC / HEIF — converted to PNG when you open it">HEIC</span>' : '');
+  + (x.heic ? '<span class="rawpill" title="HEIC / HEIF — converted to PNG when you open it">HEIC</span>' : '')
+  + (x.avif ? `<span class="rawpill avifpill" title="AVIF${x.optimized ? ' — optimized' : ''}">AVIF</span>` : '');
 const coverBook = s => s.books.find(b => b.seriesCover) || s.books[0];
 const seriesCover = (s, w) => s.books.length ? coverImg(coverBook(s), w) : `<img src="${placeholderCover({ id: s.id, series: s.name })}" alt="" draggable="false">`;
 const saveSeriesPref = (sid, patch) => { seriesPrefs[sid] = { ...seriesPrefs[sid], ...patch }; local.set('cf-series', seriesPrefs); };
@@ -448,6 +449,8 @@ function buildSeries() {
     s.raw = s.books.every(b => b.raw);                 // every book lossless (PNG/BMP/TIFF) → RAW pill
     s.jxl = s.books.every(b => b.jxl);                 // every book JPEG XL → JPEG XL pill
     s.heic = s.books.every(b => b.heic);               // every book HEIC / HEIF → HEIC pill
+    s.avif = s.books.length > 0 && s.books.every(b => b.avif);   // every book AVIF (✨ Optimize) → AVIF pill
+    s.optimized = s.books.some(b => b.optimized);
     const uniq = arr => [...new Map(arr.map(t => [t.toLowerCase(), t])).values()];
     s.genres = uniq(s.books.flatMap(b => b.genres || []));
     // series tags = what every *tagged* chapter has (untagged chapters = "no info", they don't veto anything);
@@ -574,6 +577,7 @@ async function load() {
     S.collections = lib.collections || []; S.colById = Object.fromEntries(S.collections.map(c => [c.id, c]));
     if (S.col && !S.colById[S.col]) S.col = null;
     S.progress = progress; S.status = status; S.loaded = true; checkBuild(status);
+    if (first) pollJobs();
     buildSeries();
     renderSidebar();
     route();
@@ -756,7 +760,7 @@ function renderHome() {
     const unread = s.books.length ? newCount(s) : 0;
     const bubble = unread && !one ? `<span class="ubub" title="${plural(unread, 'chapter')} not started yet"><i></i><b>${unread > 99 ? '99+' : unread}</b> new</span>` : '';
     return `<button class="card ${seriesTrashed(s) ? 'trashed' : unread ? 'unread' : ''} ${selOn && S.sel.has(s.id) ? 'sel' : ''}" data-series="${s.id}" ${one ? `data-single="${b0.id}"` : ''} style="--d:${Math.min(k + cols.length, 20) * 30}ms">
-      <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
+      <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || s.avif || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
       <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
       <div class="ct" ${one && b0.title && normQ(b0.title) !== normQ(s.name) ? `title="${esc(b0.title)}"` : ''}>${esc(s.name)}</div>
       <div class="cm">${one ? progressText(b0) : countLabel(s)}${s.author ? ` · <span class="au">${esc(s.author)}</span>` : ''}${!one && i.unread && i.unread < s.books.length ? ` · ${i.unread} unread` : ''}${flat && s.collectionId ? ` · 🗂️ ${esc(S.colById[s.collectionId]?.name || '')}` : ''}</div>${cardTags(s)}
@@ -919,7 +923,7 @@ function hitCard(b, k) {
   const s = S.seriesById[b.seriesId], cos = isCosplay(b.library);
   const glow = bookGlow(b, cos);
   return `<button class="card ch hit ${isDone(b) ? 'done' : ''} ${b.trashed ? 'trashed' : glow}" data-open="${b.id}" style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}<span class="badge fmt">${cos ? V(b.library).b.toUpperCase() : b.kind === 'volume' ? 'VOLUME' : 'CHAPTER'}</span>${b.raw || b.jxl || b.heic ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
+    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}<span class="badge fmt">${cos ? V(b.library).b.toUpperCase() : b.kind === 'volume' ? 'VOLUME' : 'CHAPTER'}</span>${b.raw || b.jxl || b.heic || b.avif ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(bookFrac(b) * 100)}%"></i></div>
     <div class="ct">${escWrap(s && s.books.length > 1 ? b.label + (b.title ? ' · ' + b.title : '') : b.title || b.label)}</div>
     <div class="cm">in ${esc(s?.name || b.series)}</div>
@@ -2726,7 +2730,7 @@ function favCount(f) {
 function favSeriesCard(s, k) {
   const i = seriesInfo(s), one = s.books.length === 1;
   return `<button class="card ${seriesTrashed(s) ? 'trashed' : newCount(s) && !one ? 'unread' : ''}" data-series="${s.id}" ${one ? `data-single="${s.books[0].id}"` : ''} style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${seriesCover(s, 320)}${i.unread === 0 ? '<span class="badge done">READ</span>' : ''}${s.raw || s.jxl || s.heic ? `<div class="blc">${fmtPills(s)}</div>` : ''}</div>
+    <div class="cover">${seriesCover(s, 320)}${i.unread === 0 ? '<span class="badge done">READ</span>' : ''}${s.raw || s.jxl || s.heic || s.avif ? `<div class="blc">${fmtPills(s)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
     <div class="ct">${escWrap(s.name)}</div>
     <div class="cm">${one ? progressText(s.books[0]) : countLabel(s)} · ${esc(libName(s.library))}</div>
@@ -2735,7 +2739,7 @@ function favSeriesCard(s, k) {
 function favSetCard(b, k) {
   const glow = bookGlow(b, true);                                   // favourited sets: always Cosplay
   return `<button class="card ch ${isDone(b) ? 'done' : ''} ${b.trashed ? 'trashed' : glow}" data-open="${b.id}" style="--d:${Math.min(k, 20) * 30}ms">
-    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}${b.format === 'video' ? '<span class="badge fmt">▶ VIDEO</span>' : ''}${b.raw || b.jxl || b.heic ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
+    <div class="cover">${coverImg(b, 320)}${statusBadge(b, glow)}${b.format === 'video' ? '<span class="badge fmt">▶ VIDEO</span>' : ''}${b.raw || b.jxl || b.heic || b.avif ? `<div class="blc">${fmtPills(b)}</div>` : ''}</div>
     <div class="pbar"><i style="width:${Math.round(bookFrac(b) * 100)}%"></i></div>
     <div class="ct">${escWrap(b.label)}</div>
     <div class="cm">📸 ${esc(S.seriesById[b.seriesId]?.name || b.series)}</div>
@@ -2871,6 +2875,7 @@ function renderCollectionMenu(view, t, err) {
   if (view === 'main') body = `<button data-mact="open">${ico('book', 17)} Open ${v.g}</button>
       <button data-mact="rename">${ico('sliders', 17)} Rename…</button>
       <button data-mact="ungroup" ${t.inside.length ? '' : 'disabled'}>${ico('move', 17)} Ungroup — keep ${pl(v.s)} in ${esc(libName(t.library))}</button>
+      ${optItems(t)}
       <div class="msep"></div><button class="danger" data-mact="del">${ico('trash', 17)} ${t.files ? 'Move to trash' : `Delete ${v.g}`}</button>`;
   else if (view === 'purge') body = `<p class="mnote">Delete <b>forever</b>? The files are removed from disk right now, with their reading progress. This can’t be undone.</p><div class="mrow"><button class="btn-sm" data-mact="main">Cancel</button><button class="btn-sm danger-solid" data-mact="confirmpurge">${ico('trash', 15)} Delete forever</button></div>`;
   else if (view === 'del') body = `<p class="mnote">${t.files ? 'Move' : 'Delete'} <b>${esc(t.name)}</b>${t.files ? ' to the trash' : ''}?<br>${t.files ? `${plural(t.inside.length, v.s)} (${plural(t.files, 'file')}) leave the library in a few minutes and can be restored for 30 days. Use <b>Ungroup</b> instead to keep them.` : 'It’s empty — only the folder is removed.'}</p>
@@ -2900,7 +2905,7 @@ function renderMenu(view, err = '') {
     body = (isS && t.empty ? `<button data-mact="rename">${ico('sliders', 17)} Rename…</button>${colOpt}` : `${colOpt}<button data-mact="lib">${ico('move', 17)} Move to library <span class="chev">›</span></button>
       <button data-mact="series">${ico('stack', 17)} ${isS || t.multiSeries ? `Merge into ${v.s}` : `Move to ${v.s}`} <span class="chev">›</span></button>
       ${isS ? `<button data-mact="rename">${ico('sliders', 17)} Rename…</button><button data-mact="sread">${ico('check', 17)} ${t.books.every(isDone) ? 'Mark as unread' : 'Mark as read'}</button>` : t.multi ? '' : `<button data-mact="read">${ico('check', 17)} ${isDone(t) ? 'Mark as unread' : 'Mark as read'}</button>`}`)
-      + (isS && !onSeriesPage() ? `<button data-mact="open">${ico('book', 17)} Open series</button>` : '') + favOpts + `
+      + (isS && !onSeriesPage() ? `<button data-mact="open">${ico('book', 17)} Open series</button>` : '') + favOpts + optItems(t) + `
       <div class="msep"></div>
       <button class="danger" data-mact="${isS && t.empty ? 'del' : t.multi || t.multiSeries ? 'del' : 'trash'}">${ico('trash', 17)} ${isS && t.empty ? `Delete ${what}` : 'Move to trash'}</button>`;
     if (isS ? seriesTrashed(t) : !t.multi && !t.multiSeries && t.trashed) body = `<p class="mnote">In the trash. It leaves the library in a few minutes and can be restored for 30 days.</p><button data-mact="restore">${ico('refresh', 17)} Restore</button><div class="msep"></div><button class="danger" data-mact="purge">${ico('trash', 17)} Delete forever</button>`;
@@ -3023,6 +3028,8 @@ $('#menu').addEventListener('click', e => {
   if (a === 'open') { closeMenu(); location.hash = `#/series/${t.id}`; return; }
   if (a === 'newlib') { closeMenu(); return openLibModal(); }
   if (a === 'details') { closeMenu(); return openDetails(t.id); }
+  if (a === 'optimize') { const o = optSel(t); closeMenu(); return openOptimize(o); }
+  if (a === 'unoptimize') return runOp('POST', '/api/optimize/undo', optSel(t).sel, 'Originals restored');
   if (a === 'rename') {
     const isCol = M.kind === 'collection', id = M.id, anchor = M.anchor;
     return openPrompt(anchor, { title: `Rename ${isCol ? V(t.library).g : V(t.library).s}`, hint: 'Renames the folder on disk · reading progress is kept', value: t.name, button: 'Rename',
@@ -3515,3 +3522,198 @@ document.addEventListener('keydown', e => {
 }, true);
 
 boot();
+
+/* ======================= ✨ OPTIMIZE (AVIF) ======================= */
+// The ⋯ / right-click menu opens a dialog: pick a preset (each with an estimated size), optionally compare one
+// page before / after, start. The server converts in the background; the Jobs panel shows progress.
+const fmtBytes = n => n >= 1e9 ? `${(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e8 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
+const pctLess = (a, b) => b ? `−${Math.max(0, Math.round((1 - a / b) * 100))}%` : '';
+function optSel(t) {
+  if (M.kind === 'series') return { sel: { series: [t.id] }, books: t.books, title: t.name };
+  if (M.kind === 'multiseries') return { sel: { series: [...t.ids] }, books: t.ids.flatMap(id => S.seriesById[id]?.books || []), title: t.label };
+  if (M.kind === 'books') return { sel: { books: [...t.ids] }, books: t.ids.map(id => S.books[id]).filter(Boolean), title: t.label };
+  if (M.kind === 'collection') return { sel: { collections: [t.id] }, books: t.inside.flatMap(x => x.books), title: t.name };
+  return { sel: { books: [t.id] }, books: [t], title: `${t.series} · ${t.label}` };
+}
+function optItems(t) {
+  const o = optSel(t);
+  if (!o.books.some(b => b.format === 'images')) return '';
+  return `<button data-mact="optimize">${ico('spark', 17)} Optimize…</button>`
+    + (o.books.some(b => b.canUndo) ? `<button data-mact="unoptimize">${ico('refresh', 17)} Undo optimize</button>` : '');
+}
+const OPT = { cur: null, jobs: [], min: false, pollT: 0, seen: {} };
+async function openOptimize(o) {
+  let m = $('#optModal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'optModal'; m.className = 'overlay fixed';
+    document.body.append(m);
+    backdropCloses(m, closeOptimize);
+    m.addEventListener('click', optClick);
+    m.addEventListener('change', optChange);
+    m.addEventListener('input', e => { if (e.target.id === 'optSplit') optSplit(e.target.value); });
+  }
+  const lib = o.books[0]?.library, cos = isCosplay(lib);
+  OPT.cur = { ...o, lib, cos, preset: null, shrink: cos, maxEdge: 4000, keep: true, est: {}, cmpOpen: false, gen: (OPT.cur?.gen || 0) + 1 };
+  m.innerHTML = `<div class="sheet libform optsheet"><h3>✨ Optimize ${escWrap(o.title)}</h3><p class="hintline">Loading…</p></div>`;
+  m.classList.add('open');
+  let p;
+  try { p = await api.get('/api/optimize/presets'); } catch (e) { m.querySelector('.hintline').textContent = 'Couldn’t load the presets.'; return; }
+  Object.assign(OPT.cur, { presets: p.presets, placeholder: p.placeholder, keepDays: p.keepDays, preset: p.presets[0]?.id });
+  drawOptimize();
+  estimateAll();
+}
+function closeOptimize() { $('#optModal')?.classList.remove('open'); if (OPT.cur) OPT.cur.gen++; }
+const optEdge = () => OPT.cur.shrink ? Math.max(800, +OPT.cur.maxEdge || 4000) : 0;
+function drawOptimize() {
+  const c = OPT.cur, m = $('#optModal'), any = Object.values(c.est)[0];
+  const head = any ? `${plural(any.books, V(c.lib).b)} · ${any.pages.toLocaleString()} pages · ${fmtBytes(any.before)}` : `${plural(c.books.length, V(c.lib).b)}`;
+  const why = any && Object.entries(any.why || {}).map(([w, n]) => `${plural(n, V(c.lib).b)} skipped — ${esc(w)}`).join('<br>');
+  m.querySelector('.sheet').innerHTML = `<h3>✨ Optimize ${escWrap(c.title)}</h3>
+    <p class="hintline" id="optHead">${head}</p>
+    ${c.placeholder ? `<p class="optnote">These are <b>placeholder</b> presets for testing. Your own go in <code>optimize-presets.json</code> in the config folder.</p>` : ''}
+    <div class="optlist" role="radiogroup" aria-label="Preset">${c.presets.map(p => `<label class="optrow">
+      <input type="radio" name="optPreset" value="${esc(p.id)}" ${p.id === c.preset ? 'checked' : ''}>
+      <span class="on"><b>${esc(p.name)}</b>${p.hint ? `<small>${esc(p.hint)}</small>` : ''}</span>
+      <span class="est" data-est="${esc(p.id)}">${estText(c.est[p.id])}</span></label>`).join('')}</div>
+    <label class="optchk"><input type="checkbox" id="optShrink" ${c.shrink ? 'checked' : ''}> Shrink huge photos to
+      <input type="number" id="optEdge" min="800" max="16000" step="100" value="${c.maxEdge}" aria-label="Longest side in pixels"> px on the long edge</label>
+    <label class="optchk"><input type="checkbox" id="optKeep" ${c.keep ? 'checked' : ''}> Keep originals for ${plural(c.keepDays, 'day')} — undo from the menu any time</label>
+    ${any?.raw ? `<p class="optnote warn">${plural(any.raw, V(c.lib).b)} ${any.raw === 1 ? 'is' : 'are'} lossless (RAW). ${any.raw === 1 ? 'It' : 'They'} won’t be lossless any more.</p>` : ''}
+    ${why ? `<p class="optnote">${why}</p>` : ''}
+    <div class="optcmp" id="optCmp" ${c.cmpOpen ? '' : 'hidden'}></div>
+    <div class="formerr" id="optErr"></div>
+    <div class="formfoot"><button type="button" class="btn-ghost" data-opt="compare" ${any?.sample ? '' : 'disabled'}>${c.cmpOpen ? 'Hide comparison' : 'Compare a page'}</button><div class="grow"></div>
+      <button type="button" class="btn-ghost" data-opt="cancel">Cancel</button>
+      <button type="button" class="btn-primary" data-opt="start" ${any && !any.books ? 'disabled' : ''}>${ico('spark', 16)} Optimize</button></div>`;
+  if (c.cmpOpen) drawCompare();
+}
+const estText = e => !e ? '<i>estimating…</i>' : e.error ? '—' : `~${fmtBytes(e.after)} <small>${pctLess(e.after, e.before)}</small>`;
+async function estimateAll() {
+  const c = OPT.cur, gen = c.gen, edge = optEdge();
+  for (const p of c.presets) {
+    let e;
+    try { e = await jsonFetch('POST', '/api/optimize/estimate', { ...c.sel, preset: p.id, maxEdge: edge }); }
+    catch (err) { e = { error: err.message }; }
+    if (gen !== OPT.cur.gen || edge !== optEdge()) return;          // closed, or the size changed meanwhile
+    const first = !Object.values(c.est).some(x => x && !x.error);
+    c.est[p.id] = e;
+    if (first && !e.error) drawOptimize();                         // the header, warnings and buttons need it
+    else { const el = $(`#optModal [data-est="${CSS.escape(p.id)}"]`); if (el) el.innerHTML = estText(e); }
+  }
+}
+function optChange(e) {
+  const c = OPT.cur; if (!c) return;
+  if (e.target.name === 'optPreset') { c.preset = e.target.value; if (c.cmpOpen) drawCompare(); return; }
+  if (e.target.id === 'optKeep') { c.keep = e.target.checked; return; }
+  if (e.target.id === 'optShrink' || e.target.id === 'optEdge') {
+    c.shrink = $('#optShrink').checked; c.maxEdge = +$('#optEdge').value || 4000;
+    c.est = {}; c.gen++;
+    $$('#optModal [data-est]').forEach(el => { el.innerHTML = estText(null); });
+    estimateAll(); if (c.cmpOpen) drawCompare();
+  }
+}
+async function drawCompare() {
+  const c = OPT.cur, box = $('#optCmp'), s = Object.values(c.est).find(x => x?.sample)?.sample;
+  if (!box || !s) return;
+  const b = S.books[s.book], key = `${s.book}-${s.page}-${c.preset}-${optEdge()}`;
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.innerHTML = `<div class="cmpview"><img class="a" alt="Original" src="${URLS.page(b, s.page)}"><img class="b" alt="AVIF" hidden>
+      <span class="lab l">Original</span><span class="lab r">AVIF · working…</span><i class="cmpline"></i></div>
+    <input type="range" id="optSplit" min="0" max="100" value="50" aria-label="Before / after">`;
+  optSplit(50);
+  try {
+    const r = await fetch(`/api/books/${s.book}/pages/${s.page}/optimized?preset=${encodeURIComponent(c.preset)}&max=${optEdge()}`);
+    if (!r.ok) throw new Error();
+    const url = URL.createObjectURL(await r.blob());
+    if (box.dataset.key !== key) return URL.revokeObjectURL(url);
+    const img = box.querySelector('img.b'); img.onload = () => URL.revokeObjectURL(url); img.src = url; img.hidden = false;
+    box.querySelector('.lab.l').textContent = `Original · ${fmtBytes(+r.headers.get('X-Before'))}`;
+    box.querySelector('.lab.r').textContent = `AVIF · ${fmtBytes(+r.headers.get('X-After'))} (${pctLess(+r.headers.get('X-After'), +r.headers.get('X-Before'))})`;
+  } catch { box.querySelector('.lab.r').textContent = 'AVIF · couldn’t make the sample'; }
+}
+function optSplit(v) { const box = $('#optCmp'); if (box) box.style.setProperty('--split', `${v}%`); }
+async function optClick(e) {
+  const a = e.target.closest('[data-opt]')?.dataset.opt; if (!a) return;
+  const c = OPT.cur;
+  if (a === 'cancel') return closeOptimize();
+  if (a === 'compare') { c.cmpOpen = !c.cmpOpen; return drawOptimize(); }
+  if (a === 'start') {
+    const btn = e.target.closest('button'); btn.disabled = true;
+    try {
+      await jsonFetch('POST', '/api/optimize', { ...c.sel, preset: c.preset, keep: c.keep, maxEdge: optEdge(), title: c.title });
+    } catch (err) { btn.disabled = false; $('#optErr').textContent = err.message; return; }
+    closeOptimize(); S.sel = null; OPT.min = false;
+    appToast('✨ Optimizing in the background'); pollJobs();
+  }
+}
+
+/* ---- the Jobs panel (bottom right, above the uploads panel) ---- */
+async function pollJobs() {
+  clearTimeout(OPT.pollT);
+  if (!S.me) return;
+  let d; try { d = await api.get('/api/jobs'); } catch { OPT.pollT = setTimeout(pollJobs, 5000); return; }
+  OPT.jobs = d.jobs;
+  let changed = false;                                             // a book finished: refresh the library (AVIF pills)
+  for (const j of d.jobs) {
+    const n = j.done.length + j.failed.length + j.skipped.length;
+    if (OPT.seen[j.id] !== undefined && OPT.seen[j.id] !== n) changed = true;
+    OPT.seen[j.id] = n;
+  }
+  if (changed) load();
+  renderJobs();
+  if (d.jobs.some(j => j.state === 'queued' || j.state === 'running')) OPT.pollT = setTimeout(pollJobs, 1500);
+}
+function jobLine(j) {
+  const n = j.books.length, fin = j.done.length + j.skipped.length + j.failed.length;
+  const saved = j.before ? ` · saved ${fmtBytes(j.before - j.after)} (${pctLess(j.after, j.before)})` : '';
+  const extra = [j.skipped.length && `${j.skipped.length} skipped`, j.failed.length && `${j.failed.length} failed`].filter(Boolean).join(' · ');
+  if (j.state === 'done') return `Done${saved}${extra ? ' · ' + extra : ''}`;
+  if (j.state === 'cancelled') return `Cancelled after ${fin} of ${n}${saved}`;
+  if (j.state === 'paused') return `Paused · ${fin} of ${n}${saved}`;
+  if (j.state === 'queued' && !fin) return 'Waiting…';
+  return `${Math.min(fin + 1, n)} of ${n}${j.current ? ` · ${j.current.label}` : ''}${saved}${extra ? ' · ' + extra : ''}`;
+}
+function renderJobs() {
+  let box = $('#jobs');
+  if (!box) {
+    box = document.createElement('div'); box.id = 'jobs'; box.className = 'glass';
+    document.body.append(box);
+    box.addEventListener('click', jobsClick);
+    new ResizeObserver(placeJobs).observe($('#uploads'));
+  }
+  const jobs = OPT.jobs, active = jobs.filter(j => j.state === 'queued' || j.state === 'running' || j.state === 'paused');
+  if (!jobs.length) { box.classList.remove('on'); return; }
+  const pages = active.reduce((n, j) => n + j.pagesTotal, 0), done = active.reduce((n, j) => n + j.pagesDone, 0);
+  const pct = pages ? Math.round(done / pages * 100) : 100;
+  box.classList.add('on'); box.classList.toggle('min', OPT.min);
+  box.innerHTML = `<div class="up-h"><b>${ico('spark', 15)} ${active.length ? `Optimizing ${plural(active.length, 'job')}` : 'Optimize finished'}</b>
+      ${OPT.min && active.length ? `<span class="pct">${pct}%</span>` : ''}<div class="bar" ${active.length ? '' : 'hidden'}><i style="width:${pct}%"></i></div>
+      <button data-jmin title="${OPT.min ? 'Show jobs' : 'Minimise'}">${OPT.min ? '▴' : '▾'}</button>${active.length ? '' : '<button data-jclose title="Close">×</button>'}</div>
+    <div class="up-list">${jobs.map(j => {
+      const p = j.pagesTotal ? Math.round(j.pagesDone / j.pagesTotal * 100) : 0, live = j.state === 'queued' || j.state === 'running';
+      const fails = j.failed.map(f => S.books[f.id] ? `${S.books[f.id].series} · ${S.books[f.id].label}: ${f.why}` : f.why).join('\n');
+      return `<div class="up-row job ${j.state}" data-job="${j.id}"><span class="n" title="${esc(j.title)}">${esc(j.title || 'Optimize')}<small class="w">${esc(j.presetName || j.preset)}</small></span>
+        <span class="s">${j.state === 'running' || j.state === 'queued' ? `${p}%` : ''}</span>
+        <div class="bar"><i style="width:${j.state === 'done' ? 100 : p}%"></i></div>
+        <div class="jmeta" ${fails ? `title="${esc(fails)}"` : ''}>${esc(jobLine(j))}</div>
+        <div class="jacts">${live ? '<button class="btn-sm" data-jact="pause">Pause</button>' : j.state === 'paused' ? '<button class="btn-sm" data-jact="resume">Resume</button>' : ''}
+          ${live || j.state === 'paused' ? '<button class="btn-sm" data-jact="cancel">Cancel</button>' : '<button class="btn-sm" data-jact="dismiss">Dismiss</button>'}</div></div>`;
+    }).join('')}</div>`;
+  placeJobs();
+}
+function placeJobs() {
+  const box = $('#jobs'), up = $('#uploads'); if (!box) return;
+  box.style.bottom = up.classList.contains('on') && !isPhone() ? `${up.offsetHeight + 30}px` : '';
+}
+async function jobsClick(e) {
+  if (e.target.closest('[data-jmin]') || (OPT.min && e.target.closest('.up-h') && !e.target.closest('[data-jclose]'))) { OPT.min = !OPT.min; return renderJobs(); }
+  if (e.target.closest('[data-jclose]')) {
+    for (const j of OPT.jobs) await jsonFetch('POST', `/api/jobs/${j.id}/dismiss`).catch(() => {});
+    return pollJobs();
+  }
+  const b = e.target.closest('[data-jact]'); if (!b) return;
+  b.disabled = true;
+  try { await jsonFetch('POST', `/api/jobs/${b.closest('[data-job]').dataset.job}/${b.dataset.jact}`); } catch (err) { appToast(err.message); }
+  pollJobs();
+}

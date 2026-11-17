@@ -1,4 +1,4 @@
-✨ OPTIMIZE — design proposal (not implemented)
+✨ OPTIMIZE — design proposal  ·  Phase 1 is built (see README); the presets are still to be defined
 =================================================
 
 What it does
@@ -141,14 +141,21 @@ Safety, whichever engine
 5. SUGGESTED ROLLOUT
 --------------------
    Phase 1: ⋯ menu + dialog (Design 1 + compare) + job queue with Jobs panel + keep originals / Undo
-            + AVIF pill.
+            + AVIF pill.                                                         ✔ built
+            (left for later: the "Advanced" section of Design 3, lossless AVIF, .cb7 sets)
    Phase 2: library-level "Optimize all" and auto-optimize new uploads, plus the "HEIC/JXL -> AVIF"
             suggestion in the reader.
    Phase 3: the ✨ Storage page and night-only scheduling.
 
 
-DECISIONS TO MAKE
+DECISIONS TO MAKE  (what Phase 1 does for now — change any of these)
 -----------------
+   → 1: keep originals is ticked by default, for 14 days (OPTIMIZE_KEEP_DAYS)
+   → 2: shrink huge photos is ticked by default for Cosplay (4000 px), off for comics / manga
+   → 3: only the menu (and multi-select) for now
+   → 4: a worker inside the reader container, at low priority, 1–2 pages at a time
+   → presets: to be defined by the owner (config/optimize-presets.json)
+
    1. Keep originals by default? Yes for 14 days / yes forever (no space saved until cleared) / replace now?
    2. Resizing huge Cosplay photos: on by default, or opt-in only? (Biggest saving, but the only step that
       throws away pixels.)

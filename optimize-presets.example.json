@@ -1,0 +1,13 @@
+{
+  "presets": [
+    {
+      "id": "example",
+      "name": "Example preset",
+      "hint": "a short line shown under the name",
+      "quality": 70,
+      "speed": 6,
+      "subsampling": "auto",
+      "grayscale": true
+    }
+  ]
+}

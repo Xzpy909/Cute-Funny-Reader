@@ -107,6 +107,25 @@ Reading progress follows a chapter when it's moved. Empty series folders are cle
 
 Chapter/volume numbers are read from filenames (`c049`, `ch.12`, `v01`, `Vol. 3`, `#7`). `ComicInfo.xml` provides titles, series, writer, summary and `Manga=YesAndRightToLeft`. Text EPUBs open in the book reader, and fixed-layout image EPUBs open in the comic reader.
 
+## ✨ Optimize (AVIF)
+
+Right-click (or long-press) a series, set, collection or a selection → **Optimize…** converts its pages to AVIF,
+which every current browser shows directly and which is usually much smaller than JPEG / PNG.
+
+- The dialog estimates the size for each preset (from a few sample pages) and can **compare a page** before / after.
+- Conversion runs in the background (the **Jobs** panel: pause, resume, cancel) and continues after a restart.
+- Each book is written to a temporary file, every converted page is checked, and only then is it swapped in. The file
+  keeps its name, so reading progress, favourites and the chosen cover stay.
+- **Keep originals** copies the original to `config/originals` for `OPTIMIZE_KEEP_DAYS` (default 14): **Undo optimize**
+  in the menu puts it back. A page that wouldn't get smaller, GIFs and videos are left as they are.
+- Supported: `.cbz`, `.zip` and photo folders (`.cb7` sets are skipped for now).
+
+**Presets** live in `config/optimize-presets.json` (read each time the dialog opens — no restart needed). Copy
+`optimize-presets.example.json` there and edit it. Each preset: `name`, optional `hint`, `quality` (0–100),
+`speed` (0–10, slower = smaller), `subsampling` (`auto` = full colour detail for comics and manga, 4:2:0 for Cosplay;
+or `4:4:4` / `4:2:0`) and `grayscale` (store black-and-white pages as grayscale). Without the file, one placeholder
+preset is offered for testing.
+
 ## Reader features
 
 **Comics & manga**
