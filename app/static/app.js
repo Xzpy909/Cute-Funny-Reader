@@ -22,9 +22,11 @@ const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
 //   s: a group of books   b: one book   ch: what you page through   g: a folder of groups (🗂️)
 const VOCAB = {
   comics:  { s: 'series',     b: 'book', ch: 'chapter', g: 'collection', G_BADGE: 'COLLECTION',
-             author: 'Author', authorHint: 'Writer / artist', pub: 'Publisher / group', by: a => 'by ' + a, from: p => p },
+             author: 'Author', authorHint: 'Writer / artist', pub: 'Publisher / group', by: a => 'by ' + a, from: p => p,
+             dropWhat: '<b>.cbz</b>, <b>.zip</b> or <b>.epub</b> files', dropSorts: 'Chapters are sorted into series folders automatically.' },
   cosplay: { s: 'set',        b: 'variant', ch: 'variant', g: 'cosplayer', G_BADGE: 'COSPLAYER',   // circle → metadata
-             author: 'Cosplayer', authorHint: 'Who is in the photos', pub: 'Photographer / publisher', by: a => a, from: p => '📷 ' + p },
+             author: 'Cosplayer', authorHint: 'Who is in the photos', pub: 'Photographer / publisher', by: a => a, from: p => '📷 ' + p,
+             dropWhat: '<b>.zip</b> sets, photo folders or videos', dropSorts: 'Sets are sorted into cosplayer and set folders automatically.' },
 };
 const V = lid => VOCAB[lid && isCosplay(lid) ? 'cosplay' : 'comics'];
 // "all libraries" views: Cosplay words only when every library is a Cosplay one
@@ -724,7 +726,7 @@ function renderHome() {
   S.visibleSeries = list.map(([x]) => x.id);
   const Vh = col ? V(col.library) : Vhome();
   $('#stats').textContent = [cols.length ? plural(cols.length, Vh.g) : '', plural(list.length, Vh.s), plural(list.reduce((n, [s]) => n + s.books.length, 0), Vh.b),
-    hits.length ? `${plural(hits.length, 'single chapter')} by tag` : ''].filter(Boolean).join(' · ');
+    hits.length ? `${plural(hits.length, 'single ' + Vh.ch)} by tag` : ''].filter(Boolean).join(' · ');
   const weekAgo = Date.now() / 1000 - 7 * 86400;
   // front cover live; the ones behind it come as one picture drawn by the server (much cheaper to scroll).
   // Generated placeholder art can't be drawn there — such stacks stay as before.
@@ -756,7 +758,7 @@ function renderHome() {
     const fmt = !b0 ? '' : s.genres?.length ? s.genres[0].toUpperCase().slice(0, 18) : s.novel ? 'NOVEL' : s.books.every(x => x.format === 'video') ? '▶ VIDEO' : s.books.some(x => x.videos?.length) ? '▶ + PHOTOS' : libRtl(b0) ? 'RTL' : '';
     const one = s.books.length === 1;
     const unread = s.books.length ? newCount(s) : 0;
-    const bubble = unread && !one ? `<span class="ubub" title="${plural(unread, 'chapter')} not started yet"><i></i><b>${unread > 99 ? '99+' : unread}</b> new</span>` : '';
+    const bubble = unread && !one ? `<span class="ubub" title="${plural(unread, V(s.library).ch)} not started yet"><i></i><b>${unread > 99 ? '99+' : unread}</b> new</span>` : '';
     return `<button class="card ${seriesTrashed(s) ? 'trashed' : unread ? 'unread' : ''} ${selOn && S.sel.has(s.id) ? 'sel' : ''}" data-series="${s.id}" ${one ? `data-single="${b0.id}"` : ''} style="--d:${Math.min(k + cols.length, 20) * 30}ms">
       <div class="cover">${seriesCover(s, 320)}${s.empty ? '<span class="badge fmt">EMPTY</span>' : badge}${fmt ? `<span class="badge fmt">${fmt}</span>` : ''}${s.raw || s.jxl || s.heic || bubble ? `<div class="blc">${bubble}${fmtPills(s)}</div>` : ''}<span class="check">✓</span></div>
       <div class="pbar"><i style="width:${Math.round(i.frac * 100)}%"></i></div>
@@ -1987,13 +1989,13 @@ function renderWelcome() {
   $('#welcome').innerHTML = `<div class="welcome"><div class="welcome-card">
     <svg class="mascot" viewBox="0 0 200 200" aria-hidden="true">${critter(100, 128, 60, 48)}</svg>
     <h1>Add your <em>first</em> library</h1>
-    <p>A library is a shelf for your comics, manga or light novels. Create one, then drag <code>.cbz</code> or <code>.epub</code> files — or whole folders — straight onto this window.</p>
+    <p>A library is a shelf for your comics, manga, light novels or Cosplay photo sets. Create one, then drag <code>.cbz</code> or <code>.epub</code> files — or whole folders — straight onto this window.</p>
     <button class="btn-primary" data-addlib>+ Add library</button>
     <div class="steps"><span><b>1</b>Create a library</span><span><b>2</b>Drop in your files</span><span><b>3</b>Start reading</span></div>
   </div></div>`;
 }
 const dropzoneHTML = lid => `<div class="dropzone"><div class="big">📚</div><h3>${esc(libName(lid))} is empty</h3>
-  <p>Drag <b>.cbz</b>, <b>.zip</b> or <b>.epub</b> files — or whole folders — anywhere onto this window.<br>Chapters are sorted into series folders automatically.</p>
+  <p>Drag ${V(lid).dropWhat} — or whole folders — anywhere onto this window.<br>${V(lid).dropSorts}</p>
   <button class="btn-primary" data-pick="${lid}">Choose files</button></div>`;
 
 const SWATCHES = ['#ff5c8a', '#ffd84d', '#5ee6c1', '#7aa8ff', '#b388ff', '#ff9f5a'];
@@ -2357,7 +2359,7 @@ window.addEventListener('drop', async e => {
       name: `${plural(unreadable.length, 'file')} Windows wouldn’t let the browser open: the full path is over 260 characters. Shorten the name or move the folder closer to the drive (e.g. D:\\Manga), then drop just these again.` });
     renderUploads(true);
   }
-  if (!items.length) return appToast(unreadable.length ? `Your browser couldn’t read ${plural(unreadable.length, 'file')} — see the upload panel` : 'Couldn’t find any comics or images in that drop');
+  if (!items.length) return appToast(unreadable.length ? `Your browser couldn’t read ${plural(unreadable.length, 'file')} — see the upload panel` : 'Couldn’t find any archives, images or videos in that drop');
   if (!S.libraries.length) return openLibModal(null, items);
   const cur = onSeriesPage() && S.seriesById[S.curSeries];
   if (cur) return uploadFiles(cur.library, items, cur.id);
@@ -2468,7 +2470,7 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   if (stray.length) {
     const keep = await askDialog({
       title: 'Stray images found',
-      body: `<p><b>${plural(stray.length, 'image')}</b> ${stray.length === 1 ? 'sits' : 'sit'} next to comic archives in this drop:</p>
+      body: `<p><b>${plural(stray.length, 'image')}</b> ${stray.length === 1 ? 'sits' : 'sit'} next to archives in this drop:</p>
         <p class="askfiles">${stray.slice(0, 6).map(it => `<code>${esc(it.path)}</code>`).join(' ')}${stray.length > 6 ? ` <span>+${stray.length - 6} more</span>` : ''}</p>
         <p class="hintline"><b>Keep</b> packs them into a ${V(lid).ch} of their own · <b>Skip</b> adds only the archives.</p>`,
       yes: 'Keep them', no: 'Skip them' });
@@ -2494,11 +2496,11 @@ async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   try { jobs = await planDrop(lid, usable, seriesId, colFolder); }
   catch (err) { appToast(`Couldn’t plan this drop: ${err.message}`); return 0; }
   if (!jobs.length && (strayNote || plainNote)) { appToast('Nothing to add — you skipped everything in that drop'); return 0; }
-  if (!jobs.length) { UP.rows.push({ f: { size: 0 }, name: `${plural(items.length, 'file')} skipped`, state: 'err', msg: 'No comics, images or videos', p: 1 }); return renderUploads(true); }
+  if (!jobs.length) { UP.rows.push({ f: { size: 0 }, name: `${plural(items.length, 'file')} skipped`, state: 'err', msg: 'No archives, images or videos', p: 1 }); return renderUploads(true); }
   const upBatch = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);   // groups this drop in the upload log
   const batch = jobs.map(j => ({ ...j, f: j.f || { size: j.size }, lib: lid, batch: upBatch, state: 'queued', msg: j.packed ? `${j.images.length} images → ${j.name.slice(j.name.lastIndexOf('.'))}` : 'Waiting', p: 0,
     where: j.series ? '' : [j.collection && `🗂️ ${j.collection}`, j.folder].filter(Boolean).join(' / ') }));
-  if (ignored) batch.push({ f: { size: 0 }, name: `${plural(ignored, 'other file')} ignored`, state: 'skip', msg: 'Not a comic', p: 1 });
+  if (ignored) batch.push({ f: { size: 0 }, name: `${plural(ignored, 'other file')} ignored`, state: 'skip', msg: 'Not a book, picture or video', p: 1 });
   if (plainNote) batch.push({ f: { size: 0 }, name: `${plural(plainNote, 'archive')} skipped`, state: 'skip', msg: 'Your choice', p: 1 });
   if (strayNote) batch.push({ f: { size: 0 }, name: `${plural(strayNote, 'stray image')} skipped`, state: 'skip', msg: 'Your choice', p: 1 });
   UP.rows.push(...batch); renderUploads(true);
@@ -2870,7 +2872,7 @@ function renderMenu(view, err = '') {
     body = (isS && t.empty ? `<button data-mact="rename">${ico('sliders', 17)} Rename…</button>${colOpt}` : `${colOpt}<button data-mact="lib">${ico('move', 17)} Move to library <span class="chev">›</span></button>
       <button data-mact="series">${ico('stack', 17)} ${isS || t.multiSeries ? `Merge into ${v.s}` : `Move to ${v.s}`} <span class="chev">›</span></button>
       ${isS ? `<button data-mact="rename">${ico('sliders', 17)} Rename…</button><button data-mact="sread">${ico('check', 17)} ${t.books.every(isDone) ? 'Mark as unread' : 'Mark as read'}</button>` : t.multi ? '' : `<button data-mact="read">${ico('check', 17)} ${isDone(t) ? 'Mark as unread' : 'Mark as read'}</button>`}`)
-      + (isS && !onSeriesPage() ? `<button data-mact="open">${ico('book', 17)} Open series</button>` : '') + favOpts + optItems(t) + `
+      + (isS && !onSeriesPage() ? `<button data-mact="open">${ico('book', 17)} Open ${v.s}</button>` : '') + favOpts + optItems(t) + `
       <div class="msep"></div>
       <button class="danger" data-mact="${isS && t.empty ? 'del' : t.multi || t.multiSeries ? 'del' : 'trash'}">${ico('trash', 17)} ${isS && t.empty ? `Delete ${what}` : 'Move to trash'}</button>`;
     if (isS ? seriesTrashed(t) : !t.multi && !t.multiSeries && t.trashed) body = `<p class="mnote">In the trash. It leaves the library in a few minutes and can be restored for 30 days.</p><button data-mact="restore">${ico('refresh', 17)} Restore</button><div class="msep"></div><button class="danger" data-mact="purge">${ico('trash', 17)} Delete forever</button>`;
@@ -2880,14 +2882,14 @@ function renderMenu(view, err = '') {
     const libId = t.library, cur = isS ? t.collectionId : null;
     const cols = S.collections.filter(c => c.library === libId && c.id !== cur);
     body = back + (cur || t.multiSeries ? `<button data-tocol=""><i class="dot" style="background:var(--mute)"></i>No ${v.g} — ${esc(libName(libId))} root</button>` : '')
-      + cols.map(c => `<button data-tocol="${c.id}">🗂️ ${esc(c.name)}<span class="chev">${plural((S.byCol[c.id] || []).length, 'series')}</span></button>`).join('')
+      + cols.map(c => `<button data-tocol="${c.id}">🗂️ ${esc(c.name)}<span class="chev">${plural((S.byCol[c.id] || []).length, v.s)}</span></button>`).join('')
       + `<div class="msep"></div><button data-mact="newcolmove">+ New ${v.g}…</button>`;
   } else if (view === 'lib') {
     const libs = t.multiSeries ? S.libraries : S.libraries.filter(l => l.id !== t.library);
-    body = back + (libs.length ? libs.map(l => `<button data-tolib="${l.id}"><i class="dot" style="background:${esc(l.color)}"></i>${esc(l.name)}<span class="chev">${plural(l.series || 0, 'series')}</span></button>`).join('')
+    body = back + (libs.length ? libs.map(l => `<button data-tolib="${l.id}"><i class="dot" style="background:${esc(l.color)}"></i>${esc(l.name)}<span class="chev">${plural(l.series || 0, V(l.id).s)}</span></button>`).join('')
       : `<p class="mnote">This is your only library.</p><button data-mact="newlib">+ Create another library</button>`);
   } else if (view === 'series') {
-    body = back + `<input class="msearch" id="mSearch" placeholder="Search series…" autocomplete="off"><div class="mlist" id="mList">${seriesChoices('')}</div>`
+    body = back + `<input class="msearch" id="mSearch" placeholder="Search ${pl(v.s)}…" autocomplete="off"><div class="mlist" id="mList">${seriesChoices('')}</div>`
       + (isS || t.multiSeries ? '' : `<div class="msep"></div><button data-mact="newseries">+ New ${v.s}…</button>`);
   } else if (view === 'newseries') {
     body = back + `<p class="mnote" style="padding-bottom:6px">Create a new ${v.s} in <b>${esc(libName(t.library))}</b>:</p>
