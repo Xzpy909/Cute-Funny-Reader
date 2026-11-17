@@ -29,7 +29,7 @@ const V = lid => VOCAB[lid && isCosplay(lid) ? 'cosplay' : 'comics'];
 const Vhome = () => S.lib ? V(S.lib) : (S.libraries.length && S.libraries.every(l => isCosplay(l.id)) ? VOCAB.cosplay : VOCAB.comics);
 
 const ICONS = {
-  chevL: '<path d="M15 18l-6-6 6-6"/>', chevD: '<path d="M6 9l6 6 6-6"/>', spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', chevR: '<path d="M9 18l6-6-6-6"/>',
+  chevL: '<path d="M15 18l-6-6 6-6"/>', chevR: '<path d="M9 18l6-6-6-6"/>', chevD: '<path d="M6 9l6 6 6-6"/>', spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>', chevR: '<path d="M9 18l6-6-6-6"/>',
   home: '<path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>',
@@ -3550,10 +3550,9 @@ async function openOptimize(o) {
     backdropCloses(m, closeOptimize);
     m.addEventListener('click', optClick);
     m.addEventListener('change', optChange);
-    m.addEventListener('input', e => { if (e.target.id === 'optSplit') optSplit(e.target.value); });
   }
   const lib = o.books[0]?.library, cos = isCosplay(lib);
-  OPT.cur = { ...o, lib, cos, preset: null, shrink: cos, maxEdge: 4000, keep: true, est: {}, cmpOpen: false, gen: (OPT.cur?.gen || 0) + 1 };
+  OPT.cur = { ...o, lib, cos, preset: null, shrink: cos, maxEdge: 4000, keep: true, est: {}, gen: (OPT.cur?.gen || 0) + 1 };
   m.innerHTML = `<div class="sheet libform optsheet"><h3>✨ Optimize ${escWrap(o.title)}</h3><p class="hintline">Loading…</p></div>`;
   m.classList.add('open');
   let p;
@@ -3580,12 +3579,10 @@ function drawOptimize() {
     <label class="optchk"><input type="checkbox" id="optKeep" ${c.keep ? 'checked' : ''}> Keep originals for ${plural(c.keepDays, 'day')} — undo from the menu any time</label>
     ${any?.raw ? `<p class="optnote warn">${plural(any.raw, V(c.lib).b)} ${any.raw === 1 ? 'is' : 'are'} lossless (RAW). ${any.raw === 1 ? 'It' : 'They'} won’t be lossless any more.</p>` : ''}
     ${why ? `<p class="optnote">${why}</p>` : ''}
-    <div class="optcmp" id="optCmp" ${c.cmpOpen ? '' : 'hidden'}></div>
     <div class="formerr" id="optErr"></div>
-    <div class="formfoot"><button type="button" class="btn-ghost" data-opt="compare" ${any?.sample ? '' : 'disabled'}>${c.cmpOpen ? 'Hide comparison' : 'Compare a page'}</button><div class="grow"></div>
+    <div class="formfoot"><button type="button" class="btn-ghost" data-opt="compare" ${any?.books ? '' : 'disabled'}>Compare pages…</button><div class="grow"></div>
       <button type="button" class="btn-ghost" data-opt="cancel">Cancel</button>
       <button type="button" class="btn-primary" data-opt="start" ${any && !any.books ? 'disabled' : ''}>${ico('spark', 16)} Optimize</button></div>`;
-  if (c.cmpOpen) drawCompare();
 }
 const estText = e => !e ? '<i>estimating…</i>' : e.error ? '—' : `~${fmtBytes(e.after)} <small>${pctLess(e.after, e.before)}</small>`;
 async function estimateAll() {
@@ -3603,41 +3600,20 @@ async function estimateAll() {
 }
 function optChange(e) {
   const c = OPT.cur; if (!c) return;
-  if (e.target.name === 'optPreset') { c.preset = e.target.value; if (c.cmpOpen) drawCompare(); return; }
+  if (e.target.name === 'optPreset') { c.preset = e.target.value; return; }
   if (e.target.id === 'optKeep') { c.keep = e.target.checked; return; }
   if (e.target.id === 'optShrink' || e.target.id === 'optEdge') {
     c.shrink = $('#optShrink').checked; c.maxEdge = +$('#optEdge').value || 4000;
     c.est = {}; c.gen++;
     $$('#optModal [data-est]').forEach(el => { el.innerHTML = estText(null); });
-    estimateAll(); if (c.cmpOpen) drawCompare();
+    estimateAll();
   }
 }
-async function drawCompare() {
-  const c = OPT.cur, box = $('#optCmp'), s = Object.values(c.est).find(x => x?.sample)?.sample;
-  if (!box || !s) return;
-  const b = S.books[s.book], key = `${s.book}-${s.page}-${c.preset}-${optEdge()}`;
-  if (box.dataset.key === key) return;
-  box.dataset.key = key;
-  box.innerHTML = `<div class="cmpview"><img class="a" alt="Original" src="${URLS.page(b, s.page)}"><img class="b" alt="AVIF" hidden>
-      <span class="lab l">Original</span><span class="lab r">AVIF · working…</span><i class="cmpline"></i></div>
-    <input type="range" id="optSplit" min="0" max="100" value="50" aria-label="Before / after">`;
-  optSplit(50);
-  try {
-    const r = await fetch(`/api/books/${s.book}/pages/${s.page}/optimized?preset=${encodeURIComponent(c.preset)}&max=${optEdge()}`);
-    if (!r.ok) throw new Error();
-    const url = URL.createObjectURL(await r.blob());
-    if (box.dataset.key !== key) return URL.revokeObjectURL(url);
-    const img = box.querySelector('img.b'); img.onload = () => URL.revokeObjectURL(url); img.src = url; img.hidden = false;
-    box.querySelector('.lab.l').textContent = `Original · ${fmtBytes(+r.headers.get('X-Before'))}`;
-    box.querySelector('.lab.r').textContent = `AVIF · ${fmtBytes(+r.headers.get('X-After'))} (${pctLess(+r.headers.get('X-After'), +r.headers.get('X-Before'))})`;
-  } catch { box.querySelector('.lab.r').textContent = 'AVIF · couldn’t make the sample'; }
-}
-function optSplit(v) { const box = $('#optCmp'); if (box) box.style.setProperty('--split', `${v}%`); }
 async function optClick(e) {
   const a = e.target.closest('[data-opt]')?.dataset.opt; if (!a) return;
   const c = OPT.cur;
   if (a === 'cancel') return closeOptimize();
-  if (a === 'compare') { c.cmpOpen = !c.cmpOpen; return drawOptimize(); }
+  if (a === 'compare') return openCompare();
   if (a === 'start') {
     const btn = e.target.closest('button'); btn.disabled = true;
     try {
@@ -3716,4 +3692,148 @@ async function jobsClick(e) {
   b.disabled = true;
   try { await jsonFetch('POST', `/api/jobs/${b.closest('[data-job]').dataset.job}/${b.dataset.jact}`); } catch (err) { appToast(err.message); }
   pollJobs();
+}
+
+/* ---- full-screen before / after: any page of the selection, fit / 100% / 200%, drag to move around ---- */
+// Both pictures are drawn at the original's size, so a shrunken AVIF is shown scaled up — exactly what you'd see.
+// 100% = one pixel of the original on one pixel of the screen.
+const CMP = { list: [], i: 0, zoom: 'fit', split: 50, x: 0, y: 0, s: 1, key: '', drag: null };
+function openCompare() {
+  const c = OPT.cur;
+  CMP.list = c.books.filter(b => b.format === 'images')
+    .flatMap(b => Array.from({ length: b.pages }, (_, n) => n).filter(n => !(b.videos || []).includes(n)).map(n => [b.id, n]));
+  if (!CMP.list.length) return;
+  const s = Object.values(c.est).find(x => x?.sample)?.sample;
+  CMP.i = Math.max(0, s ? CMP.list.findIndex(([b, n]) => b === s.book && n === s.page) : 0);
+  CMP.zoom = 'fit'; CMP.split = 50;
+  let o = $('#optCompare');
+  if (!o) {
+    o = document.createElement('div'); o.id = 'optCompare'; o.className = 'cmpfull';
+    document.body.append(o);
+    o.addEventListener('click', cmpClick);
+    o.addEventListener('change', e => { if (e.target.id === 'cmpBook') cmpGo(CMP.list.findIndex(([b]) => b === e.target.value)); });
+    o.addEventListener('pointerdown', cmpDown);
+    o.addEventListener('dblclick', e => { if (e.target.closest('.cmpstage') && !e.target.closest('.cmpknob')) cmpZoom(CMP.zoom === 'fit' ? '1' : 'fit', e); });
+    o.addEventListener('wheel', e => {                                   // the wheel scrolls a zoomed page
+      if (CMP.zoom === 'fit' || !e.target.closest('.cmpstage')) return;
+      e.preventDefault(); CMP.x -= e.shiftKey ? e.deltaY : e.deltaX; CMP.y -= e.shiftKey ? 0 : e.deltaY; cmpLayout();
+    }, { passive: false });
+    document.addEventListener('keydown', e => {
+      if (!$('#optCompare.open')) return;
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); return closeCompare(); }
+      if (e.target.matches?.('select, input')) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); cmpGo(CMP.i + 1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); cmpGo(CMP.i - 1); }
+      else if (e.key === 'z') cmpZoom(CMP.zoom === 'fit' ? '1' : 'fit');
+    }, true);
+    addEventListener('resize', () => { if ($('#optCompare.open')) cmpLayout(); });
+  }
+  const books = [...new Set(CMP.list.map(([b]) => b))];
+  o.innerHTML = `<div class="cmpbar">
+      <div class="cmpp" role="radiogroup" aria-label="Preset">${c.presets.map(p => `<button type="button" role="radio" data-cpreset="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div>
+      <div class="cmpnav"><button type="button" class="ib" data-cnav="-1" aria-label="Previous page">${ico('chevL', 18)}</button>
+        <span class="cmppos"></span><button type="button" class="ib" data-cnav="1" aria-label="Next page">${ico('chevR', 18)}</button>
+        ${books.length > 1 ? `<select id="cmpBook" aria-label="${cap(V(c.lib).b)}">${books.map(id => { const b = S.books[id]; return `<option value="${id}">${esc(b ? `${b.series} · ${b.label}` : id)}</option>`; }).join('')}</select>` : ''}</div>
+      <div class="cmpz" role="group" aria-label="Zoom">${[['fit', 'Fit'], ['1', '100%'], ['2', '200%']].map(([z, t]) => `<button type="button" data-czoom="${z}">${t}</button>`).join('')}</div>
+      <button type="button" class="btn-primary" data-cclose>Done</button></div>
+    <div class="cmpstage"><div class="lay a"><img alt="Original" draggable="false"></div><div class="lay b"><img alt="AVIF" draggable="false"></div>
+      <span class="lab l"></span><span class="lab r"></span><span class="cmpmsg"></span>
+      <button type="button" class="cmpknob" aria-label="Move the before / after divider (arrow keys)"><i></i></button></div>
+    <p class="cmphint">Drag the divider to compare · ${'double-click or Z'} zooms to 100% · drag to move around · ← → other pages</p>`;
+  o.querySelector('.cmpknob').addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); CMP.split = clamp(CMP.split + (e.key === 'ArrowLeft' ? -5 : 5), 0, 100); cmpLayout(); }
+  });
+  o.classList.add('open');
+  cmpLoad();
+}
+function closeCompare() { $('#optCompare')?.classList.remove('open'); CMP.key = ''; }
+function cmpGo(i) {
+  if (i < 0 || i >= CMP.list.length || i === CMP.i) return;
+  CMP.i = i; cmpLoad();
+}
+async function cmpLoad() {
+  const o = $('#optCompare'), c = OPT.cur, [bid, n] = CMP.list[CMP.i], b = S.books[bid];
+  const preset = c.presets.find(p => p.id === c.preset), edge = optEdge();
+  const key = `${bid}-${n}-${c.preset}-${edge}`; CMP.key = key;
+  o.querySelectorAll('[data-cpreset]').forEach(x => x.setAttribute('aria-checked', x.dataset.cpreset === c.preset));
+  o.querySelectorAll('[data-czoom]').forEach(x => x.classList.toggle('on', x.dataset.czoom === CMP.zoom));
+  const pagesOf = CMP.list.filter(([x]) => x === bid).length, nth = CMP.list.slice(0, CMP.i + 1).filter(([x]) => x === bid).length;
+  o.querySelector('.cmppos').textContent = `${o.querySelector('#cmpBook') ? '' : `${b.series} · ${b.label} · `}page ${nth} of ${pagesOf}`;
+  if (o.querySelector('#cmpBook')) o.querySelector('#cmpBook').value = bid;
+  o.querySelector('[data-cnav="-1"]').disabled = CMP.i === 0;
+  o.querySelector('[data-cnav="1"]').disabled = CMP.i === CMP.list.length - 1;
+  const A = o.querySelector('.lay.a img'), B = o.querySelector('.lay.b img'), msg = o.querySelector('.cmpmsg');
+  const lr = o.querySelector('.lab.r'), ll = o.querySelector('.lab.l');
+  B.style.visibility = 'hidden'; lr.textContent = `${preset?.name || ''} · working…`; ll.textContent = 'Original'; msg.textContent = '';
+  const origLoaded = new Promise(res => { A.onload = res; A.onerror = res; });
+  A.src = URLS.page(b, n);                                       // the original file, untouched
+  try {
+    const r = await fetch(`/api/books/${bid}/pages/${n}/optimized?preset=${encodeURIComponent(c.preset)}&max=${edge}`);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'error');
+    const before = +r.headers.get('X-Before'), after = +r.headers.get('X-After'), blob = await r.blob();
+    await origLoaded;
+    if (CMP.key !== key) return;
+    const url = URL.createObjectURL(blob);
+    await new Promise(res => { B.onload = res; B.onerror = res; B.src = url; });
+    URL.revokeObjectURL(url);
+    if (CMP.key !== key) return;
+    ll.textContent = `Original · ${fmtBytes(before)} · ${A.naturalWidth}×${A.naturalHeight}`;
+    lr.textContent = after === before ? `${preset?.name} · kept as it is (AVIF wouldn’t be smaller)`
+      : `${preset?.name} · ${fmtBytes(after)} (${pctLess(after, before)}) · ${B.naturalWidth}×${B.naturalHeight}`;
+    B.style.visibility = '';
+  } catch (e) { if (CMP.key === key) { await origLoaded; lr.textContent = `${preset?.name} · couldn’t convert this page`; msg.textContent = e.message !== 'error' ? e.message : ''; } }
+  if (CMP.key === key) cmpLayout(true);
+}
+function cmpLayout(newPage) {
+  const o = $('#optCompare'), st = o.querySelector('.cmpstage'), A = o.querySelector('.lay.a img');
+  const vw = st.clientWidth, vh = st.clientHeight, nw = A.naturalWidth || 1, nh = A.naturalHeight || 1;
+  const s = CMP.zoom === 'fit' ? Math.min(vw / nw, vh / nh) : +CMP.zoom / (devicePixelRatio || 1);
+  const W = nw * s, H = nh * s;
+  if (newPage) { CMP.x = (vw - W) / 2; CMP.y = H > vh ? 0 : (vh - H) / 2; }   // a new page: centred, from its top
+  CMP.x = W <= vw ? (vw - W) / 2 : clamp(CMP.x, vw - W, 0);
+  CMP.y = H <= vh ? (vh - H) / 2 : clamp(CMP.y, vh - H, 0);
+  CMP.s = s;
+  for (const img of o.querySelectorAll('.lay img')) {
+    img.style.width = `${W}px`; img.style.height = `${H}px`; img.style.transform = `translate(${CMP.x}px, ${CMP.y}px)`;
+  }
+  st.style.setProperty('--split', `${CMP.split}%`);
+  st.classList.toggle('zoomed', CMP.zoom !== 'fit');
+  st.classList.toggle('pixels', CMP.zoom === '2');                // 200%: real pixels, not smoothed over
+  o.querySelectorAll('[data-czoom]').forEach(x => x.classList.toggle('on', x.dataset.czoom === CMP.zoom));
+}
+function cmpZoom(z, e) {
+  const st = $('#optCompare .cmpstage'), r = st.getBoundingClientRect();
+  const px = e ? e.clientX - r.left : st.clientWidth / 2, py = e ? e.clientY - r.top : st.clientHeight / 2;
+  const u = (px - CMP.x) / CMP.s, v = (py - CMP.y) / CMP.s;          // the image point under the cursor stays put
+  CMP.zoom = z;
+  const s = z === 'fit' ? 0 : +z / (devicePixelRatio || 1);
+  if (s) { CMP.x = px - u * s; CMP.y = py - v * s; }
+  cmpLayout();
+}
+function cmpDown(e) {
+  const st = e.target.closest('.cmpstage'); if (!st || e.button !== 0) return;
+  const knob = e.target.closest('.cmpknob'), r = st.getBoundingClientRect();
+  const mode = knob || CMP.zoom === 'fit' ? 'split' : 'pan';      // fit: dragging anywhere moves the divider
+  CMP.drag = { mode, sx: e.clientX, sy: e.clientY, x: CMP.x, y: CMP.y };
+  st.setPointerCapture(e.pointerId);
+  const move = ev => {
+    if (CMP.drag.mode === 'split') CMP.split = clamp((ev.clientX - r.left) / r.width * 100, 0, 100);
+    else { CMP.x = CMP.drag.x + ev.clientX - CMP.drag.sx; CMP.y = CMP.drag.y + ev.clientY - CMP.drag.sy; }
+    cmpLayout();
+  };
+  if (mode === 'split') move(e);
+  const up = () => { st.removeEventListener('pointermove', move); st.removeEventListener('pointerup', up); st.removeEventListener('pointercancel', up); CMP.drag = null; };
+  st.addEventListener('pointermove', move); st.addEventListener('pointerup', up); st.addEventListener('pointercancel', up);
+  e.preventDefault();
+}
+function cmpClick(e) {
+  if (e.target.closest('[data-cclose]')) return closeCompare();
+  const nav = e.target.closest('[data-cnav]'); if (nav) return cmpGo(CMP.i + +nav.dataset.cnav);
+  const z = e.target.closest('[data-czoom]'); if (z) return cmpZoom(z.dataset.czoom);
+  const p = e.target.closest('[data-cpreset]');
+  if (p) {                                                        // the preset chosen here is the one the dialog uses
+    OPT.cur.preset = p.dataset.cpreset;
+    const r = $(`#optModal input[name=optPreset][value="${CSS.escape(p.dataset.cpreset)}"]`); if (r) r.checked = true;
+    cmpLoad();
+  }
 }

@@ -878,14 +878,31 @@ body.booting .app{visibility:hidden}
 .optchk{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13.5px;font-weight:600;color:#cfcad8;cursor:pointer}
 .optchk input[type=checkbox]{accent-color:var(--pop);width:16px;height:16px;margin:0}
 .optchk input[type=number]{width:84px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 8px;font:600 13px var(--mono)}
-.optcmp{display:grid;gap:10px}
-.cmpview{position:relative;height:min(52vh,520px);border-radius:14px;overflow:hidden;background:#0a0a0e}
-.cmpview img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.cmpview img.b{clip-path:inset(0 0 0 var(--split,50%))}
-.cmpview .cmpline{position:absolute;top:0;bottom:0;left:var(--split,50%);width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);pointer-events:none}
-.cmpview .lab{position:absolute;top:10px;font:600 11px var(--mono);padding:4px 8px;border-radius:7px;background:rgba(0,0,0,.65);color:#fff}
-.cmpview .lab.l{left:10px}.cmpview .lab.r{right:10px}
-#optSplit{width:100%;accent-color:var(--pop)}
+/* full-screen before / after */
+.cmpfull{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;background:#07070a}
+.cmpfull.open{display:flex;animation:fadeIn .2s var(--ease)}
+.cmpbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--ink-2)}
+.cmpp,.cmpz{display:flex;gap:4px;padding:3px;border-radius:12px;background:var(--ink);border:1px solid var(--line)}
+.cmpp button,.cmpz button{height:32px;padding:0 12px;border-radius:9px;font-weight:700;font-size:13px;color:var(--mute)}
+.cmpp button[aria-checked=true],.cmpz button.on{background:#2a2834;color:var(--text)}
+.cmpnav{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+.cmpnav .cmppos{font:600 12.5px var(--mono);color:#cfcad8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmpnav select{max-width:260px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--ink);color:var(--text);padding:0 8px;font-weight:600}
+.cmpnav .ib:disabled{opacity:.3}
+.cmpstage{position:relative;flex:1;overflow:hidden;cursor:ew-resize;touch-action:none;user-select:none}
+.cmpstage.zoomed{cursor:grab}.cmpstage.zoomed:active{cursor:grabbing}
+.cmpstage .lay{position:absolute;inset:0;overflow:hidden}
+.cmpstage .lay.b{clip-path:inset(0 0 0 var(--split,50%))}
+.cmpstage .lay img{position:absolute;left:0;top:0;max-width:none;transform-origin:0 0;image-rendering:auto}
+.cmpstage.pixels .lay img{image-rendering:pixelated}
+.cmpstage .lab{position:absolute;top:12px;z-index:2;font:600 11.5px var(--mono);padding:5px 9px;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;pointer-events:none;max-width:45%}
+.cmpstage .lab.l{left:12px}.cmpstage .lab.r{right:12px;text-align:right}
+.cmpstage .cmpmsg{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-size:12.5px;color:#ff8aa5}
+.cmpknob{position:absolute;z-index:3;top:0;bottom:0;left:var(--split,50%);width:28px;margin-left:-14px;cursor:ew-resize;display:grid;place-items:center}
+.cmpknob::before{content:"";position:absolute;top:0;bottom:0;left:13px;width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+.cmpknob i{position:relative;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.6)}
+.cmpknob:focus-visible i{outline:3px solid var(--pop)}
+.cmphint{margin:0;padding:8px 16px;font-size:12px;color:var(--mute);text-align:center;border-top:1px solid var(--line)}
 .rawpill.avifpill{color:var(--mint)}
 /* the Jobs panel looks like the uploads panel */
 #jobs{position:fixed;right:18px;bottom:18px;z-index:74;width:360px;max-height:50vh;border-radius:18px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.8)}

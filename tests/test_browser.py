@@ -481,9 +481,30 @@ def test_optimize_from_the_menu_then_undo(server, browser):
         assert "placeholder" in pg.inner_text("#optModal .optnote").lower()
         pg.wait_for_function("document.querySelector('#optModal .est') && !/estimating/.test(document.querySelector('#optModal .est').textContent)")
         assert "2 variants" in pg.inner_text("#optHead") and "−" in pg.inner_text("#optModal .est")
-        pg.click("#optModal [data-opt=compare]")
-        pg.wait_for_selector("#optCmp img.b:not([hidden])")
-        pg.wait_for_function("/AVIF · \\d/.test(document.querySelector('#optCmp .lab.r').textContent)")
+        pg.click("#optModal [data-opt=compare]")                         # full-screen before / after
+        pg.wait_for_selector("#optCompare.open")
+        label = "document.querySelector('#optCompare .lab.r').textContent"
+        pg.wait_for_function(f"/KB|kept as it is/.test({label})")
+        first = pg.inner_text("#optCompare .cmppos")
+        pg.click("#optCompare [data-cnav='1']")                          # another page
+        pg.wait_for_function(f"document.querySelector('#optCompare .cmppos').textContent !== {first!r} && /KB|kept/.test({label})")
+        pg.select_option("#cmpBook", index=1)                             # another set of the selection
+        pg.wait_for_function(f"/page 1 of/.test(document.querySelector('#optCompare .cmppos').textContent) && /KB|kept/.test({label})")
+        pg.click("#optCompare [data-czoom='2']")                          # 200%: one image pixel = 2 device pixels
+        w = pg.evaluate("(() => { const i = document.querySelector('#optCompare .lay.a img'); return [parseFloat(i.style.width), i.naturalWidth * 2 / devicePixelRatio]; })()")
+        assert abs(w[0] - w[1]) < 1, w
+        both = "[...document.querySelectorAll('#optCompare .lay img')].map(i => i.style.transform)"
+        before = pg.evaluate(both)
+        box = pg.locator("#optCompare .cmpstage").bounding_box()
+        pg.mouse.move(box["x"] + 200, box["y"] + 200); pg.mouse.down(); pg.mouse.move(box["x"] + 120, box["y"] + 90, steps=4); pg.mouse.up()
+        after = pg.evaluate(both)
+        assert after[0] != before[0] and after[0] == after[1]            # moved, and both pictures together
+        pg.click("#optCompare [data-czoom='fit']")
+        pg.mouse.click(box["x"] + box["width"] * .25, box["y"] + 100)     # fit: a click moves the divider
+        assert pg.evaluate("Math.round(CMP.split)") in range(23, 28)
+        pg.keyboard.press("Escape")
+        pg.wait_for_selector("#optCompare", state="hidden")
+        assert pg.is_visible("#optModal.open")
         pg.click("#optModal [data-opt=start]")
         pg.wait_for_selector("#jobs.on")
         pg.wait_for_function("OPT.jobs.length && OPT.jobs[0].state === 'done'", timeout=30000)
