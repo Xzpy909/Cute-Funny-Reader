@@ -2693,8 +2693,8 @@ function uploadDone(r, status, d) {
   else { r.state = 'err'; r.p = 1; r.msg = d.detail || (status ? `Error ${status}` : 'Network error'); r.serverSaw = status > 0; }
   renderUploads();
 }
-// A folder of photos: the files go to a staging folder on the server one by one, then the server packs them
-// into the .zip / .cbz (nothing big is held in the browser's memory — sets with videos run to gigabytes).
+// A folder of photos: the files go to the server one by one, straight into the .zip / .cbz it builds
+// (nothing big is held in the browser's memory — sets with videos run to gigabytes).
 async function putPack(r) {
   const files = [...r.images, ...(r.extras || [])];
   const pad = Math.max(3, String(r.images.length).length);
@@ -2711,14 +2711,14 @@ async function putPack(r) {
     const ext = (f.name.match(/\.[^.]+$/) || ['.jpg'])[0].toLowerCase();
     const name = i >= r.images.length ? f.name : String(i + 1).padStart(pad, '0') + ext;   // pages: stable reading order
     const up = await xhrSend(r, 'PUT', `/api/packs/${pid}/files?${new URLSearchParams({ name })}`, f,
-      loaded => { r.p = .95 * (sent + loaded) / total; r.msg = `${Math.round(r.p / .95 * 100)}%`; renderUploads(); });
+      loaded => { r.p = .97 * (sent + loaded) / total; r.msg = `${Math.round(r.p / .97 * 100)}%`; renderUploads(); });
     if (r.cancel || up.status === -1) { drop(); return markCancelled(r); }
     if (up.status !== 200) { drop(); return uploadDone(r, up.status, up.data); }
     sent += f.size;
   }
   r.images = null; r.extras = null;
-  r.msg = 'Packing on the server…'; r.p = .95; renderUploads();
-  // past this point Cancel can't stop it (the server is already packing): the row shows how it really ended
+  r.msg = 'Finishing…'; r.p = .97; renderUploads();
+  // past this point Cancel can't stop it (the set is being put in place): the row shows how it really ended
   const fin = await xhrSend({}, 'POST', `/api/packs/${pid}/finish?${placeQuery(r)}`);
   uploadDone(r, fin.status, fin.data);
 }

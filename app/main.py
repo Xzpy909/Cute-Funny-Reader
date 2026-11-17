@@ -587,35 +587,48 @@ def upload_batch_done(batch: str, body: dict = Body(default={})):
 # ---- Folders packed on the server -----------------------------------------------------------------------------
 # A dropped folder of photos becomes one .zip (Cosplay) / .cbz. The browser used to build that archive itself,
 # holding every photo in memory (a set with large videos needed gigabytes) — now it only sends the files:
-#   POST   /api/libraries/{lid}/packs            → {id}       a staging folder in /config/cache/packs/<id>
-#   PUT    /api/packs/{id}/files?name=001.jpg                one file at a time (already named in page order)
-#   POST   /api/packs/{id}/finish?name=…&series=…            packed (ZIP64 when needed) and stored like an upload
-#   DELETE /api/packs/{id}                                   cancelled
-# The staging folder is self-describing (pack.json), so a restart in between doesn't lose it; left-overs
-# older than a day are removed when the next pack starts.
-PACKS = CONFIG_DIR / "cache" / "packs"
+#   POST   /api/libraries/{lid}/packs            → {id}
+#   PUT    /api/packs/{id}/files?name=001.jpg    one file at a time, in page order, written straight into the zip
+#   POST   /api/packs/{id}/finish?name=…&series=…   the zip is closed and stored like an upload
+#   DELETE /api/packs/{id}                       cancelled
+# The zip being built lives in <account>/.packs/ — on the library's own drive, hidden from scans like .trash —
+# so finishing *moves* it into place. Every byte is written once: with Docker Desktop's shared folders, staging
+# the files first and copying them into a zip afterwards took minutes for a 4 GB set.
+# Left-overs older than a day are removed when the next pack starts.
+PACK_DIR = ".packs"
 PACK_TTL = 86400
 PACK_ID = re.compile(r"^[a-f0-9]{16}$")
 PACK_META = {"metadata.json", "comicinfo.xml", "info.yaml", "info.yml"}
+_pack_locks: dict[str, asyncio.Lock] = {}
 
 
-def _pack_dir(pid: str) -> Path:
-    """The staging folder of one of *this account's* packs (404 otherwise)."""
-    d = PACKS / pid
+def _packs_root() -> Path:
+    return LIB_ROOT / me()["folder"] / PACK_DIR
+
+
+def _pack(pid: str) -> tuple[Path, dict]:
+    """(the zip being built, its meta) for one of *this account's* packs — 404 otherwise."""
+    root = _packs_root()
     try:
-        meta = json.loads((d / "pack.json").read_text("utf-8")) if PACK_ID.match(pid) else None
+        meta = json.loads((root / f"{pid}.json").read_text("utf-8")) if PACK_ID.match(pid) else None
     except (OSError, ValueError):
         meta = None
     if not meta or meta.get("owner") != me()["id"]:
         raise HTTPException(404, "pack not found — it may have expired; drop the folder again")
-    return d
+    return root / f"{pid}.zip", meta
 
 
-def _sweep_packs():
+def _pack_drop(zp: Path):
+    zp.unlink(missing_ok=True)
+    zp.with_suffix(".json").unlink(missing_ok=True)
+    _pack_locks.pop(zp.stem, None)
+
+
+def _sweep_packs(root: Path):
     try:
-        for d in PACKS.iterdir():
-            if d.stat().st_mtime < time.time() - PACK_TTL:
-                shutil.rmtree(d, ignore_errors=True)
+        for f in root.iterdir():
+            if f.stat().st_mtime < time.time() - PACK_TTL:
+                f.unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -623,64 +636,72 @@ def _sweep_packs():
 @app.post("/api/libraries/{lid}/packs")
 def pack_start(lid: str):
     own_lib(lid)
-    _sweep_packs()
+    root = _packs_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(400, f"Can't write to the library folder ({e.strerror}). Is /data mounted read-only?")
+    _sweep_packs(root)
     pid = secrets.token_hex(8)
-    d = PACKS / pid
-    d.mkdir(parents=True)
-    (d / "pack.json").write_text(json.dumps({"owner": me()["id"], "lib": lid, "started": time.time()}), "utf-8")
+    zipfile.ZipFile(root / f"{pid}.zip", "w").close()          # an empty archive to add to
+    (root / f"{pid}.json").write_text(json.dumps({"owner": me()["id"], "lib": lid, "started": time.time()}), "utf-8")
     return {"id": pid}
 
 
 @app.put("/api/packs/{pid}/files")
 async def pack_file(pid: str, name: str, request: Request):
-    d = _pack_dir(pid)
+    zp, _ = _pack(pid)
     n = safe_component(posixpath.basename(name.replace("\\", "/")))
-    if not n or n == "pack.json" or not (n.lower().endswith(MEDIA_EXT) or n.lower() in PACK_META):
+    if not n or not (n.lower().endswith(MEDIA_EXT) or n.lower() in PACK_META):
         raise HTTPException(400, "Only pictures, videos and metadata files can go into a set")
-    tmp = d / f".{n}.part"
-    try:
-        with open(tmp, "wb") as f:
-            async for chunk in request.stream():
-                f.write(chunk)
-        os.replace(tmp, d / n)
-    finally:
-        tmp.unlink(missing_ok=True)
+    async with _pack_locks.setdefault(pid, asyncio.Lock()):    # one file at a time into the same zip
+        z = zipfile.ZipFile(zp, "a", zipfile.ZIP_STORED, allowZip64=True)
+        try:
+            if n in z.namelist():
+                raise HTTPException(409, f"“{n}” is already in this set")
+            info = zipfile.ZipInfo(n, date_time=time.localtime()[:6])
+            info.compress_type = zipfile.ZIP_STORED            # photos / videos don't shrink: stored as they are
+            with z.open(info, "w", force_zip64=True) as w:     # size unknown up front: room for 4 GB+ files
+                async for chunk in request.stream():
+                    w.write(chunk)
+        except HTTPException:
+            z.close()
+            raise
+        except BaseException:                                  # cut off mid-file: this set can't be finished
+            z.close()
+            _pack_drop(zp)
+            raise
+        z.close()
     return {"ok": True}
-
-
-def _pack_files(d: Path) -> list[Path]:
-    return sorted((f for f in d.iterdir() if f.is_file() and f.name != "pack.json" and not f.name.startswith(".")),
-                  key=lambda f: (f.name.lower() in PACK_META, f.name.lower()))
 
 
 @app.post("/api/packs/{pid}/finish")
 async def pack_finish(pid: str, name: str, request: Request, series: str | None = None,
                       collection: str | None = None, folder: str | None = None, batch: str | None = None):
-    d = _pack_dir(pid)
-    meta = json.loads((d / "pack.json").read_text("utf-8"))
-    files = _pack_files(d)
-    if not any(f.name.lower().endswith(MEDIA_EXT) for f in files):
-        shutil.rmtree(d, ignore_errors=True)
+    zp, meta = _pack(pid)
+    try:
+        with zipfile.ZipFile(zp) as z:
+            media = any(n.lower().endswith(MEDIA_EXT) for n in z.namelist())
+    except (OSError, zipfile.BadZipFile):
+        media = False
+    if not media:
+        _pack_drop(zp)
         raise HTTPException(400, "Nothing arrived to pack — no pictures or videos")
 
     async def fill(tmp: Path):
-        request.state.received = sum(f.stat().st_size for f in files)
-        def build():                                   # stored, not deflated: photos / videos don't shrink
-            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
-                for f in files:
-                    z.write(f, f.name)
-        await asyncio.to_thread(build)
+        request.state.received = zp.stat().st_size
+        await asyncio.to_thread(shutil.move, zp, tmp)          # same drive: a rename, not a copy
 
     try:
         return await _logged(meta["lib"], name, request, batch,
                              _upload(meta["lib"], name, request, series, collection, folder, fill=fill))
     finally:
-        shutil.rmtree(d, ignore_errors=True)
+        _pack_drop(zp)
 
 
 @app.delete("/api/packs/{pid}")
 def pack_cancel(pid: str):
-    shutil.rmtree(_pack_dir(pid), ignore_errors=True)
+    _pack_drop(_pack(pid)[0])
     return {"ok": True}
 
 
