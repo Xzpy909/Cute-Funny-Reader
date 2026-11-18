@@ -2443,58 +2443,71 @@ function strayImages(items) {
     if (list.some(it => BOOK_RE.test(it.file.name))) out.push(...list.filter(it => IMG_RE.test(it.file.name)));
   return out;
 }
-// small Yes / No dialog → Promise<boolean>. Esc or clicking outside = No.
-function askDialog({ title, body, yes = 'Yes', no = 'No' }) {
+/* ---------- the review sheet: what a drop will create, before anything is sent ----------
+   One sheet instead of stacked Yes / No dialogs. The plan comes from the server (planDrop); the choices —
+   stray images next to archives, regular .zip / .rar / .7z archives — are toggles that re-plan at once.
+   A drop with nothing to decide that only adds ready-made files goes straight in (no extra click).
+   → Promise<{ jobs, strayNote, plainNote } | null> (null = cancelled) */
+async function reviewDrop(lid, usable, seriesId, colFolder, ignored) {
+  const cos = isCosplay(lid), packExt = cos ? '.zip' : '.cbz';
+  const stray = new Set(strayImages(usable));
+  // regular archives: probably a comic / set, converted on the server (Cosplay keeps a .zip as it is)
+  const plain = new Set(usable.filter(it => PLAIN_ARCHIVE_RE.test(it.file.name) && !(cos && /\.zip$/i.test(it.file.name))));
+  const opt = { stray: true, plain: true };
+  const picked = () => usable.filter(it => (opt.stray || !stray.has(it)) && (opt.plain || !plain.has(it)));
+  let jobs = await planDrop(lid, picked(), seriesId, colFolder);
+  if (!stray.size && !plain.size && jobs.every(j => !j.packed && !j.folder && !j.collection)) return { jobs, strayNote: 0, plainNote: 0 };
+  const v = V(lid), sName = seriesId && S.seriesById[seriesId]?.name;
+  const dest = j => sName ? `→ ${sName}` : [j.collection && `🗂️ ${j.collection}`, j.folder].filter(Boolean).join(' / ')
+    || (cos ? 'Sorted by the name' : `${cap(v.s)} from the file name`);
+  const list = () => {
+    const groups = new Map();
+    for (const j of jobs) { const k = dest(j); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(j); }
+    const total = jobs.reduce((n, j) => n + (j.size || 0), 0);
+    return `<p class="hintline">${plural(jobs.length, 'file')} · ${fmtBytes(total)} → ${plural(groups.size, 'place')} in ${esc(libName(lid))}</p>
+      <div class="revlist">${[...groups].map(([k, js]) => `<div class="revgrp"><b>${esc(k)}</b>${js.slice(0, 40).map(j =>
+        `<div class="revrow"><span>${esc(j.name)}</span><small>${j.packed ? `${plural(j.images.length, j.images.every(f => VIDEO_RE.test(f.name)) ? 'video' : 'picture')} packed` : fmtBytes(j.size || 0)}</small></div>`).join('')}${js.length > 40 ? `<div class="revrow"><small>+ ${js.length - 40} more</small></div>` : ''}</div>`).join('')
+        || '<p class="hintline">Nothing would be added.</p>'}</div>`;
+  };
+  const paths = set => [...set].slice(0, 4).map(it => `<code>${esc(it.path)}</code>`).join(' ') + (set.size > 4 ? ` <span>+${set.size - 4} more</span>` : '');
   return new Promise(res => {
     const o = document.createElement('div');
-    o.className = 'overlay fixed open askmodal';
-    o.innerHTML = `<div class="sheet libform" role="dialog" aria-modal="true"><h3>${esc(title)}</h3><div class="askbody">${body}</div>
-      <div class="mrow askrow"><button class="btn-ghost" data-ask="0">${esc(no)}</button><button class="btn-primary" data-ask="1">${esc(yes)}</button></div></div>`;
-    const done = v => { document.removeEventListener('keydown', key, true); o.remove(); res(v); };
-    const key = e => { if (!e.isTrusted) return; if (e.key === 'Escape') { e.stopImmediatePropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); done(true); } };
-    o.addEventListener('click', e => { const b = e.target.closest('[data-ask]'); if (b && e.isTrusted) done(b.dataset.ask === '1'); });
+    o.className = 'overlay fixed open askmodal revmodal';
+    o.innerHTML = `<div class="sheet libform" role="dialog" aria-modal="true"><h3>Add to ${esc(libName(lid))}</h3>
+      <div class="revbody">${list()}</div>
+      ${stray.size ? `<label class="optchk revopt"><input type="checkbox" data-rev="stray" checked><span>Keep <b>${plural(stray.size, 'image')}</b> lying next to archives — packed into a ${v.ch} of their own<span class="askfiles">${paths(stray)}</span></span></label>` : ''}
+      ${plain.size ? `<label class="optchk revopt"><input type="checkbox" data-rev="plain" checked><span>Convert <b>${plural(plain.size, 'regular archive')}</b> to <code>${packExt}</code> (only pictures &amp; videos are kept)<span class="askfiles">${paths(plain)}</span></span></label>` : ''}
+      ${ignored ? `<p class="hintline">${plural(ignored, 'other file')} ignored — not a book, picture or video.</p>` : ''}
+      <div class="formerr" id="revErr"></div>
+      <div class="mrow askrow"><button class="btn-ghost" data-revgo="0">Cancel</button><button class="btn-primary" data-revgo="1">Add</button></div></div>`;
+    const go = o.querySelector('[data-revgo="1"]');
+    const sync = () => { go.disabled = !jobs.length; go.textContent = jobs.length ? `Add ${plural(jobs.length, 'file')}` : 'Nothing to add'; };
+    const done = v => { document.removeEventListener('keydown', key, true); o.remove();
+      res(v ? { jobs, strayNote: opt.stray ? 0 : stray.size, plainNote: opt.plain ? 0 : plain.size } : null); };
+    const key = e => { if (!e.isTrusted) return; if (e.key === 'Escape') { e.stopImmediatePropagation(); done(false); } else if (e.key === 'Enter' && !go.disabled) { e.preventDefault(); done(true); } };
+    o.addEventListener('change', async e => {
+      const k = e.target.dataset?.rev; if (!k) return;
+      opt[k] = e.target.checked; go.disabled = true;
+      try { jobs = await planDrop(lid, picked(), seriesId, colFolder); o.querySelector('.revbody').innerHTML = list(); o.querySelector('#revErr').textContent = ''; }
+      catch (err) { o.querySelector('#revErr').textContent = err.message; }
+      sync();
+    });
+    o.addEventListener('click', e => { const b = e.target.closest('[data-revgo]'); if (b && e.isTrusted && !b.disabled) done(b.dataset.revgo === '1'); });
     backdropCloses(o, () => done(false));
     document.addEventListener('keydown', key, true);
-    document.body.appendChild(o);
-    o.querySelector('[data-ask="1"]').focus();
+    document.body.appendChild(o); sync(); go.focus();
   });
 }
 
 async function uploadFiles(lid, input, seriesId = null, colFolder = null) {
   const items = input.map(x => x.file ? x : { file: x, path: x.webkitRelativePath || x.name });
-  let usable = items.filter(it => BOOK_RE.test(it.file.name) || IMG_RE.test(it.file.name) || VIDEO_RE.test(it.file.name) || META_RE.test(it.file.name));
-  // images lying next to archives (posters, covers, scans of the box…) would be packed into a chapter / set of
-  // their own — ask first. A drop of *only* images is a photo set / chapter on purpose: no question then.
-  const stray = strayImages(usable);
-  let strayNote = 0;
-  if (stray.length) {
-    const keep = await askDialog({
-      title: 'Stray images found',
-      body: `<p><b>${plural(stray.length, 'image')}</b> ${stray.length === 1 ? 'sits' : 'sit'} next to archives in this drop:</p>
-        <p class="askfiles">${stray.slice(0, 6).map(it => `<code>${esc(it.path)}</code>`).join(' ')}${stray.length > 6 ? ` <span>+${stray.length - 6} more</span>` : ''}</p>
-        <p class="hintline"><b>Keep</b> packs them into a ${V(lid).ch} of their own · <b>Skip</b> adds only the archives.</p>`,
-      yes: 'Keep them', no: 'Skip them' });
-    if (!keep) { const drop = new Set(stray); usable = usable.filter(it => !drop.has(it)); strayNote = stray.length; }
-  }
-  // regular .zip / .rar / .7z: probably a comic, but ask — they're converted to .cbz on the server
-  // (Cosplay keeps a .zip as it is — it's the usual format there; .rar / .7z still become .zip after asking)
-  const plain = usable.filter(it => PLAIN_ARCHIVE_RE.test(it.file.name) && !(isCosplay(lid) && /\.zip$/i.test(it.file.name)));
-  const packExt = isCosplay(lid) ? '.zip' : '.cbz';
-  let plainNote = 0;
-  if (plain.length) {
-    const exts = [...new Set(plain.map(it => it.file.name.split('.').pop().toLowerCase()))].map(x => '.' + x).join(' / ');
-    const conv = await askDialog({
-      title: plain.length === 1 ? 'Archive found' : 'Archives found',
-      body: `<p><b>${plural(plain.length, 'regular archive')}</b> (${esc(exts)}) in this drop:</p>
-        <p class="askfiles">${plain.slice(0, 6).map(it => `<code>${esc(it.path)}</code>`).join(' ')}${plain.length > 6 ? ` <span>+${plain.length - 6} more</span>` : ''}</p>
-        <p class="hintline"><b>Convert</b> turns each into a <code>${packExt}</code> ${isCosplay(lid) ? 'set' : 'comic'} (only its pictures &amp; videos are kept) · <b>Skip</b> leaves ${plain.length === 1 ? 'it' : 'them'} out.</p>`,
-      yes: `Convert to ${packExt}`, no: 'Skip' });
-    if (!conv) { const drop = new Set(plain); usable = usable.filter(it => !drop.has(it)); plainNote = plain.length; }
-  }
-  const ignored = items.length - usable.length - strayNote - plainNote;
-  let jobs;
-  try { jobs = await planDrop(lid, usable, seriesId, colFolder); }
+  const usable = items.filter(it => BOOK_RE.test(it.file.name) || IMG_RE.test(it.file.name) || VIDEO_RE.test(it.file.name) || META_RE.test(it.file.name));
+  let r;
+  try { r = await reviewDrop(lid, usable, seriesId, colFolder, items.length - usable.length); }
   catch (err) { appToast(`Couldn’t plan this drop: ${err.message}`); return 0; }
+  if (!r) return 0;                                   // cancelled in the review sheet
+  const { jobs, strayNote, plainNote } = r;
+  const ignored = items.length - usable.length;
   if (!jobs.length && (strayNote || plainNote)) { appToast('Nothing to add — you skipped everything in that drop'); return 0; }
   if (!jobs.length) { UP.rows.push({ f: { size: 0 }, name: `${plural(items.length, 'file')} skipped`, state: 'err', msg: 'No archives, images or videos', p: 1 }); return renderUploads(true); }
   const upBatch = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);   // groups this drop in the upload log

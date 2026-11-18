@@ -93,6 +93,7 @@ Reading progress follows a chapter when it's moved. Empty series folders are cle
 ### Adding books
 
 - **Drag & drop** `.cbz`, `.zip`, `.cb7`, `.cbr` or `.epub` files (`.cb7` and `.cbr` are converted to `.cbz` on upload — pages stored uncompressed, so they open instantly) (plus `.mp4`, `.webm`, `.mkv`, `.mov`, `.m4v` videos in Cosplay libraries), or whole folders, anywhere onto the window. With several libraries you drop onto the one you want.
+- A drop that creates folders, or holds something to decide, first opens a **review sheet**: what will be created, grouped by where it goes. Images lying next to archives and regular `.zip` / `.rar` / `.7z` archives are toggles there (the plan updates as you flip them); ready-made files dropped on their own go straight in. The plan comes from the server, so the naming rules live in one place
 - Or use **+ Add files** in a library.
 - Uploaded files are sorted automatically: `Series Name c045.cbz` is saved to `/data/<Library>/Series Name/`. Duplicates are skipped, and non-archive files are rejected.
 - Files copied into a library folder by other means are picked up on the next scan (every `SCAN_INTERVAL` seconds) or via **Rescan library**.
