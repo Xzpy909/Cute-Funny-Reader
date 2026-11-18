@@ -45,21 +45,26 @@ favs = Store(Db.at(CONFIG_DIR / "reader.db"), "favorites", CONFIG_DIR / "favorit
 lib.accounts = accounts
 _user: contextvars.ContextVar[dict | None] = contextvars.ContextVar("user", default=None)
 STATIC = Path(__file__).parent / "static"
-# fingerprint of the front-end files: busts browser caches (app.js?v=…) and lets open tabs notice a rebuild
+# fingerprint of the front-end files: busts browser caches (js/….js?v=…, app.css?v=…) and lets open tabs notice
+# a rebuild. The frontend is in parts (static/js/*.js), all listed in index.html.
 import hashlib as _hashlib
-_FRONT = ("index.html", "app.js", "app.css")
 _front_seen: tuple = (None, "", "")
+
+
+def _front_files() -> list[Path]:
+    return [STATIC / "index.html", STATIC / "app.css", *sorted((STATIC / "js").glob("*.js"))]
 
 
 def front() -> tuple[str, str]:
     """(build fingerprint, index.html) — recomputed when a front-end file changes on disk, so dev mode
-    (./app mounted into the container) shows edits on refresh; costs three stat() calls otherwise."""
+    (./app mounted into the container) shows edits on refresh; costs a stat() per file otherwise."""
     global _front_seen
-    stamp = tuple((STATIC / f).stat().st_mtime_ns for f in _FRONT)
+    files = _front_files()
+    stamp = tuple((f.name, f.stat().st_mtime_ns) for f in files)
     if stamp != _front_seen[0]:
-        build = _hashlib.sha1(b"".join((STATIC / f).read_bytes() for f in _FRONT)).hexdigest()[:10]
-        index = (STATIC / "index.html").read_text("utf-8").replace("app.css", f"app.css?v={build}") \
-            .replace("app.js", f"app.js?v={build}").replace("<head>", f'<head><meta name="cf-build" content="{build}">', 1)
+        build = _hashlib.sha1(b"".join(f.read_bytes() for f in files)).hexdigest()[:10]
+        index = re.sub(r'src="(js/[^"?]+\.js)"', rf'src="\1?v={build}"', (STATIC / "index.html").read_text("utf-8"))
+        index = index.replace("app.css", f"app.css?v={build}").replace("<head>", f'<head><meta name="cf-build" content="{build}">', 1)
         _front_seen = (stamp, build, index)
     return _front_seen[1], _front_seen[2]
 
@@ -1490,7 +1495,7 @@ async def require_login(request: Request, call_next):
 
 
 # Always serve the current UI: index.html is never cached, and it references
-# app.js / app.css with ?v=<version> so a rebuilt container can't run stale code.
+# js/*.js / app.css with ?v=<version> so a rebuilt container can't run stale code.
 @app.get("/", include_in_schema=False)
 @app.get("/index.html", include_in_schema=False)
 def index():
