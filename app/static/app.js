@@ -313,6 +313,8 @@ const S = {
   libraries: [], books: {}, series: [], seriesById: {}, progress: {}, status: null,
   lib: null, filter: 'all', q: '', sort: local.get('cf-sort', 'recent'), loaded: false,
 };
+// per-series view settings (rtl, view, sort, mode, fit): kept per account on the server so they follow you to
+// other devices; this is the working copy (also used offline) — synced at start and when the tab comes back
 const seriesPrefs = local.get('cf-series', {});
 const libOf = id => S.libById?.[id];
 const libName = id => libOf(id)?.name || 'Library';
@@ -394,7 +396,46 @@ const fmtPills = x => (x.raw ? '<span class="rawpill" title="Lossless images (PN
   + (x.heic ? '<span class="rawpill" title="HEIC / HEIF — converted to PNG when you open it">HEIC</span>' : '');
 const coverBook = s => s.books.find(b => b.seriesCover) || s.books[0];
 const seriesCover = (s, w) => s.books.length ? coverImg(coverBook(s), w) : `<img src="${placeholderCover({ id: s.id, series: s.name })}" alt="" draggable="false">`;
-const saveSeriesPref = (sid, patch) => { seriesPrefs[sid] = { ...seriesPrefs[sid], ...patch }; local.set('cf-series', seriesPrefs); };
+const prefQ = new Set(); let prefT;
+function pushSeriesPrefs() {                          // changes go up shortly after they're made, a few at once
+  clearTimeout(prefT);
+  prefT = setTimeout(() => {
+    if (!S.me || !prefQ.size) return;
+    const body = Object.fromEntries([...prefQ].map(id => [id, seriesPrefs[id] || null])); prefQ.clear();
+    jsonFetch('PUT', '/api/prefs/series', body).catch(() => Object.keys(body).forEach(id => prefQ.add(id)));   // retried with the next change
+  }, 400);
+}
+// patch: { key: value } — undefined / null forgets that key (back to the default)
+const saveSeriesPref = (sid, patch) => {
+  const p = { ...seriesPrefs[sid], ...patch };
+  for (const k of Object.keys(p)) if (p[k] == null) delete p[k];
+  if (Object.keys(p).length) seriesPrefs[sid] = p; else delete seriesPrefs[sid];
+  local.set('cf-series', seriesPrefs); prefQ.add(sid); pushSeriesPrefs();
+};
+// a series got a new id (renamed / merged): its settings go with it
+const moveSeriesPref = (from, to) => {
+  if (!seriesPrefs[from] || from === to) return;
+  seriesPrefs[to] = seriesPrefs[from]; delete seriesPrefs[from];
+  local.set('cf-series', seriesPrefs); prefQ.add(from); prefQ.add(to); pushSeriesPrefs();
+};
+let prefSynced = 0;
+async function syncSeriesPrefs() {
+  if (!S.me || prefQ.size) return;                    // (changes still on their way up: next time)
+  let srv; try { srv = await api.get('/api/prefs/series'); } catch { return; }   // offline: the working copy stays
+  // settings this browser kept from before they lived on the server go up once — to the first account that signs in
+  // here; after that the working copy is always some account's server copy, never something to hand to another
+  if (!local.get('cf-series-synced', false)) {
+    const up = Object.fromEntries(Object.entries(seriesPrefs).filter(([id]) => !srv[id]));
+    if (Object.keys(up).length) { try { srv = await jsonFetch('PUT', '/api/prefs/series', up); } catch { return; } }
+    local.set('cf-series-synced', true);
+  }
+  prefSynced = Date.now();
+  const before = JSON.stringify(seriesPrefs);
+  for (const k of Object.keys(seriesPrefs)) delete seriesPrefs[k];
+  Object.assign(seriesPrefs, srv); local.set('cf-series', seriesPrefs);
+  if (S.loaded && JSON.stringify(seriesPrefs) !== before && !location.hash.startsWith('#/read')) route();   // (never under an open book)
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - prefSynced > 30000) syncSeriesPrefs(); });
 
 const prog = b => S.progress[b.id];
 const isDone = b => !!prog(b)?.done;
@@ -2279,7 +2320,7 @@ $('#detForm').addEventListener('submit', async e => {
     if (seriesPrefs[sid]?.rtl != null) saveSeriesPref(sid, { rtl: undefined });   // the file decides now
     if (v.name !== DM.init.name) {
       const d = await jsonFetch('PATCH', `/api/series/${sid}`, { name: v.name });
-      if (seriesPrefs[sid]) { seriesPrefs[d.seriesId] = seriesPrefs[sid]; delete seriesPrefs[sid]; local.set('cf-series', seriesPrefs); }
+      moveSeriesPref(sid, d.seriesId);
       if (location.hash === `#/series/${sid}`) history.replaceState(null, '', `#/series/${d.seriesId}`);
       sid = d.seriesId;
     }
@@ -3017,7 +3058,7 @@ $('#menu').addEventListener('click', e => {
         if (name === t.name) return;
         const d = await jsonFetch('PATCH', isCol ? `/api/collections/${id}` : `/api/series/${id}`, { name });
         const nid = isCol ? d.id : d.seriesId;
-        if (!isCol && seriesPrefs[id]) { seriesPrefs[nid] = seriesPrefs[id]; delete seriesPrefs[id]; local.set('cf-series', seriesPrefs); }
+        if (!isCol) moveSeriesPref(id, nid);
         const page = isCol ? `#/collection/${id}` : `#/series/${id}`;
         if (location.hash === page) history.replaceState(null, '', isCol ? `#/collection/${nid}` : `#/series/${nid}`);
         appToast(`Renamed to ${name}`); await load();
@@ -3154,13 +3195,12 @@ $('#serForm').addEventListener('submit', async e => {
         method: s ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { $('#serErr').textContent = d.detail || 'Something went wrong'; return; }
-      if (s && d.seriesId !== s.id) { seriesPrefs[d.seriesId] = { ...seriesPrefs[s.id] }; delete seriesPrefs[s.id]; }
+      if (s && d.seriesId !== s.id) moveSeriesPref(s.id, d.seriesId);
       sid = d.seriesId;
     }
     const patch = { view: smodal.view, sort: smodal.sort };
     if (smodal.dir === 'lib') { patch.rtl = undefined; } else patch.rtl = smodal.dir === 'rtl';
-    saveSeriesPref(sid, patch);
-    if (smodal.dir === 'lib') { delete seriesPrefs[sid].rtl; local.set('cf-series', seriesPrefs); }
+    saveSeriesPref(sid, patch);                       // (rtl: undefined = back to the library's direction)
     $('#serModal').classList.remove('open');
     appToast(s ? `${cap(V(smodal.lid).s)} updated` : `Created ${name}`);
     if (location.hash !== `#/series/${sid}`) history[s ? 'replaceState' : 'pushState'](null, '', `#/series/${sid}`);
@@ -3313,7 +3353,7 @@ async function boot() {
   catch { return serverGone(false); }
   if (!st.user) return showAuth(st.setup);
   S.me = st.user; $('#auth').hidden = true; document.body.classList.remove('authing');
-  renderAcct(); load();
+  renderAcct(); load(); syncSeriesPrefs();
 }
 function showAuth(setup) {
   if (!$('#auth').hidden && $('#auth').dataset.mode === (setup ? 'setup' : 'login')) return;

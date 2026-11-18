@@ -1234,6 +1234,40 @@ def _fav_or_404(lists: list, fid: str) -> dict:
     return f
 
 
+# ---- per-series view settings: reading direction, layout, order, reader mode, fit — per account, on the server,
+# so they follow you from one device to the next (they used to live in each browser's localStorage)
+series_prefs = Store(Db.at(CONFIG_DIR / "reader.db"), "series_prefs")      # {account id: {series id: {key: value}}}
+SERIES_PREF_KEYS = {"rtl": bool, "view": str, "sort": str, "mode": str, "fit": str}
+
+
+def _clean_pref(p) -> dict:
+    if not isinstance(p, dict):
+        return {}
+    return {k: v for k, v in p.items() if k in SERIES_PREF_KEYS and isinstance(v, SERIES_PREF_KEYS[k])
+            and (not isinstance(v, str) or 0 < len(v) <= 20)}
+
+
+@app.get("/api/prefs/series")
+def get_series_prefs():
+    return series_prefs.get(me()["id"]) or {}
+
+
+@app.put("/api/prefs/series")
+def put_series_prefs(body: dict = Body(...)):
+    """{series id: {key: value} | null}: each named series' settings replaced as a whole (null / {} = forgotten).
+    (Settings of a series that's gone stay behind — a few bytes, and a drive that's only unplugged comes back.)"""
+    uid = me()["id"]
+    cur = dict(series_prefs.get(uid) or {})
+    for sid, p in list(body.items())[:2000]:
+        p = _clean_pref(p)
+        if p and sid and len(sid) <= 64:
+            cur[sid] = p
+        else:
+            cur.pop(sid, None)
+    series_prefs.put(uid, cur)
+    return cur
+
+
 @app.get("/api/favorites")
 def favorites():
     lists = _my_favs()

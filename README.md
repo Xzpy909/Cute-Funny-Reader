@@ -42,6 +42,8 @@ Libraries are stored in `config/libraries.json`. **Remove library** (in Library 
 | **Manga** | right ← left | per-series override in Series settings |
 | **Cosplay** | left → right | photo sets: guided panels and reading-direction toggle are disabled; **videos are allowed** |
 
+A series' own settings — reading direction, cards / list, order, and the reader's mode and fit — are kept per account on the server, so they follow you from the PC to the phone (settings a browser remembered from before are taken over the first time you sign in there).
+
 Folders whose name contains "manga" or "cosplay" get that type automatically.
 
 ### Series & collections
