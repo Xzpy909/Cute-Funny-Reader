@@ -29,7 +29,6 @@ const clickTable = () => CLICKS ||= [      // built at the first click — every
   ['[data-sortflip]', clickSortFlip],
   ['#grid [data-series]', clickSelectSeries, () => S.sel && S.selMode === 'series'],                    // selecting:
   ['.chgrid [data-open], .blist [data-open]', clickSelectBook, () => S.sel && S.selMode === 'books'],  // toggle, don't open
-  ['.card.trashed, .brow.trashed', clickTrashed, () => !S.sel],
   ['[data-mark]', clickMark],
   ['[data-markall]', clickMarkAll],
   ['[data-open]', clickOpen],
@@ -47,6 +46,7 @@ const clickTable = () => CLICKS ||= [      // built at the first click — every
   ['[data-filter]', clickFilter],
   ['[data-nav]', clickFavsNav, el => el.dataset.nav === 'favs'],
   ['[data-nav]', clickStorageNav, el => el.dataset.nav === 'storage'],
+  ['[data-nav]', clickTrashNav, el => el.dataset.nav === 'trash'],
   ['[data-favlist]', clickFavList],
   ['[data-favback]', clickFavBack],
   ['[data-newfav]', clickNewFav],

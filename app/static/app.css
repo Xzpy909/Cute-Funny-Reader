@@ -2697,6 +2697,19 @@ input[type="range"]::-moz-range-thumb {
   opacity: 1;
   transform: translateX(-50%);
 }
+#apptoast.act.show {
+  pointer-events: auto;
+}
+#apptoast button {
+  font: inherit;
+  color: var(--lemon);
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .libset {
   height: 44px;
   padding: 0 14px;
@@ -4780,63 +4793,10 @@ body.booting .app {
   filter: grayscale(1);
   box-shadow: inset 3px 0 0 #a3182f;
 }
-.trashsheet {
-  width: min(680px, 94vw);
-}
-.tlist {
-  display: grid;
-  gap: 8px;
-  max-height: min(56vh, 560px);
-  overflow-y: auto;
-  scrollbar-width: thin;
-  margin: 0 -6px;
-  padding: 0 6px;
-}
-.trow {
-  display: grid;
-  grid-template-columns: 44px 1fr auto auto;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-}
-.trow img {
-  width: 44px;
-  height: 64px;
-  object-fit: cover;
-  border-radius: 6px;
-  background: #22202b;
-}
-.trow .tinfo {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-.trow b {
-  font-size: 13.5px;
-  overflow-wrap: anywhere;
-}
-.trow small {
-  color: var(--mute);
-  font-size: 12px;
-}
-.trow .tdel {
-  color: #ff8aa5;
-}
-.trow .tdel.armed,
 .formfoot .btn-danger.armed {
   background: #c21f3d;
   color: #fff;
   border-color: transparent;
-}
-@media (max-width: 560px) {
-  .trow {
-    grid-template-columns: 44px 1fr;
-  }
-  .trow .btn-sm {
-    grid-column: span 1;
-  }
 }
 /* ---- Home rows */
 #rows {
@@ -5583,3 +5543,20 @@ body.reading #jobs {
 ::-webkit-scrollbar-button {
   display: none;
 }
+
+/* ---------- Trash page (#/trash) ---------- */
+#viewTrash .shelf-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tkeep { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; opacity: 0.85; }
+.tcard { cursor: pointer; }
+.tcard .cover img { filter: saturate(0.55); transition: filter 0.2s; }
+.tcard:hover .cover img, .tcard.sel .cover img { filter: none; }
+.badge.tleft { top: 8px; left: 8px; right: auto; background: rgba(12, 11, 16, 0.78); color: #fff; backdrop-filter: blur(6px); }
+.badge.tleft.soon { background: #c0392b; color: #fff; }
+.tcard .cm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tbtns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.tbtns .btn-sm { padding: 4px 9px; font-size: 12px; }
+.tselbar, .tpick { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  padding: 10px 14px; border-radius: 14px; margin: 0 0 18px; }
+.tselbar small { opacity: 0.7; margin-right: auto; }
+.tpick b { margin-right: auto; }
+.btn-sm.danger-soft:hover, #viewTrash .btn-sm.danger, .stbox .btn-sm.danger { background: #c0392b; color: #fff; border-color: #c0392b; }

@@ -88,7 +88,21 @@ Each series card and chapter row has a **⋯** button. You can also long-press o
 - **Move to library**: moves the files to another library's folder
 - **Move to series** (chapter) or **Merge into series** (series): files move into that series' folder. You can also start a **New series…**
 - **Mark as read / unread**
-- **Delete chapter / series**: asks for confirmation, then removes the files from disk
+- **Delete chapter / series**: moves it to the **Trash** at once; the message at the bottom has **Undo**
+
+### 🗑 Trash
+
+Deleted files leave the library right away and wait on the **Trash** page (sidebar; it shows how many items and
+how much space). Each card says where it was ("Was in: Comics / Starfall") and how many days it has left. Click
+cards to select them, then **Restore** or **Delete forever**; group the page by library or by day. **Empty trash**
+says how much space it frees and needs a second click.
+
+- Restoring puts files back where they were: a missing collection or series folder is made again, and if the name
+  is taken the file gets a free one ("Starfall 01 (2)"). If the whole library is gone, you choose another one.
+- How long things stay (7 / 14 / 30 / 90 days, or until emptied) is chosen on the Trash page by the admin. The
+  `TRASH_KEEP_DAYS` variable is only the starting value (default 30).
+- The files sit in a hidden `.trash` folder of the account; the **Storage** page shows the trash size with
+  **Empty trash** too.
 
 Reading progress follows a chapter when it's moved. Empty series folders are cleaned up automatically.
 
@@ -210,7 +224,10 @@ started with.
 | `PUT /api/libraries/{id}/files?name=…` | upload a file (raw body) |
 | `GET /api/folders` | existing folders under `/data` |
 | `POST /api/books/{id}/move`, `POST /api/series/{id}/move` | move / merge (`library`, `seriesId`, `newSeries`, `into`) |
-| `DELETE /api/books/{id}`, `DELETE /api/series/{id}` | delete files |
+| `DELETE /api/books/{id}`, `DELETE /api/series/{id}` | move files to the trash |
+| `GET /api/trash`, `GET /api/trash/{id}/cover` | what's in the trash (size, days left, where it was) |
+| `POST /api/trash/restore`, `POST /api/trash/purge` | restore / delete for good (`ids`, `bin`, `all`; restore: `into`) |
+| `PUT /api/trash/settings` | keep time (`keepDays`: 7, 14, 30, 90 or 0 = until emptied; admin) |
 | `POST /api/scan` | trigger rescan |
 
 ## Local development (no Docker)

@@ -92,7 +92,16 @@ function renderFavListMenu(view, t, err = '') {
 /* ======================= ITEM MENU (⋯ · long-press · right-click) ======================= */
 const M = { kind: null, id: null };
 let appToastT;
-function appToast(msg) { const t = $('#apptoast'); t.textContent = msg; t.classList.add('show'); clearTimeout(appToastT); appToastT = setTimeout(() => t.classList.remove('show'), 2600); }
+// a short message at the bottom; `action` ({ label, run }) adds one button — e.g. Undo — and keeps it up longer
+function appToast(msg, action = null) {
+  const t = $('#apptoast'); t.textContent = msg; t.classList.toggle('act', !!action);
+  if (action) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = action.label;
+    b.onclick = () => { t.classList.remove('show'); action.run(); };
+    t.append(' · ', b);
+  }
+  t.classList.add('show'); clearTimeout(appToastT); appToastT = setTimeout(() => t.classList.remove('show'), action ? 7000 : 2600);
+}
 const menuTarget = () => {
   if (M.kind === 'favlist') { const f = S.favById[M.id]; return f ? { ...f, isFavList: true } : null; }
   if (M.kind === 'series') return S.seriesById[M.id];
@@ -262,7 +271,7 @@ function renderMenu(view, err = '') {
     $('#mNewForm').addEventListener('submit', ev => { ev.preventDefault(); if (inp.value.trim()) runMove({ newSeries: inp.value.trim(), library: t.library }, `Moved to “${inp.value.trim()}”`); });
   }
 }
-async function runOp(method, url, body, okMsg) {
+async function runOp(method, url, body, okMsg, undo = null) {
   const m = $('#menu'); m.classList.add('busy');
   let r = null, d = {};
   try {
@@ -273,7 +282,7 @@ async function runOp(method, url, body, okMsg) {
   const sid = M.kind === 'series' ? M.id : M.kind === 'books' ? null : S.books[M.id]?.seriesId;
   const wasOnSeries = sid && location.hash.startsWith('#/series/') && location.hash.includes(sid) && M.kind === 'series';
   if (M.kind === 'books' || M.kind === 'multiseries') S.sel = null;
-  closeMenu(); appToast(okMsg);
+  closeMenu(); appToast(okMsg, undo);
   if (wasOnSeries) location.hash = S.lib ? `#/library/${S.lib}` : '#/';
   await load();
 }
@@ -369,10 +378,16 @@ $('#menu').addEventListener('click', e => {
       } });
   }
   if (a === 'confirmdel' || a === 'trash') {
-    if (M.kind === 'books') return runOp('POST', '/api/books/delete', { ids: M.ids }, `${plural(M.ids.length, 'item')} moved to trash`);
-    if (M.kind === 'multiseries') return runOp('POST', '/api/series/delete', { ids: M.ids }, `${plural(M.ids.length, 'series')} moved to trash`);
+    // what went to the trash can come straight back: Undo in the toast
+    const undoOf = ids => ({ label: 'Undo', run: async () => {
+      try { await jsonFetch('POST', '/api/trash/restore', { ids }); appToast('Restored'); } catch (err) { appToast(err.message); }
+      load(); } });
+    if (M.kind === 'books') return runOp('POST', '/api/books/delete', { ids: M.ids }, `${plural(M.ids.length, 'item')} moved to Trash`, undoOf(M.ids));
+    if (M.kind === 'multiseries') return runOp('POST', '/api/series/delete', { ids: M.ids }, `${plural(M.ids.length, V(S.seriesById[M.ids[0]]?.library).s)} moved to Trash`,
+      undoOf(M.ids.flatMap(id => (S.seriesById[id]?.books || []).map(b => b.id))));
     const empty = M.kind === 'series' && t.empty;
-    return runOp('DELETE', M.kind === 'series' ? `/api/series/${M.id}` : `/api/books/${M.id}`, null, empty ? `Deleted ${t.name}` : `Moved to trash — click it to restore`);
+    const ids = M.kind === 'series' ? t.books.map(b => b.id) : [M.id];
+    return runOp('DELETE', M.kind === 'series' ? `/api/series/${M.id}` : `/api/books/${M.id}`, null, empty ? `Deleted ${t.name}` : 'Moved to Trash', empty ? null : undoOf(ids));
   }
   if (a === 'restore' || a === 'confirmpurge') {
     const ids = M.kind === 'series' ? t.books.map(b => b.id) : [M.id];
@@ -502,7 +517,7 @@ $('#serForm').addEventListener('submit', async e => {
 async function jsonFetch(method, url, body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = new Error(d.detail || `Error ${r.status}`); if ('setup' in d) e.setup = d.setup; throw e; }
+  if (!r.ok) { const e = new Error(d.detail || `Error ${r.status}`); if ('setup' in d) e.setup = d.setup; e.data = d; throw e; }
   return d;
 }
 function openPrompt(anchor, o) {
@@ -525,7 +540,6 @@ function clickMore(mo, e) { e.preventDefault(); e.stopPropagation(); return open
 function clickNewCol(nc) { return newCollection(nc, nc.dataset.newcol); }
 function clickSerSettings(ss) { return openSeriesModal(S.seriesById[ss.dataset.sersettings]); }
 function clickNewSeries(ns) { return openSeriesModal(null, ns.dataset.newseries); }
-function clickTrashed(gone, e) { e.preventDefault(); return openMenu(itemKey(gone), gone, isPhone() ? null : e); }
 function clickFavsNav() { location.hash = '#/favs'; }
 function clickFavList(fl) { location.hash = `#/fav/${fl.dataset.favlist}`; }
 function clickFavBack() { location.hash = '#/favs'; }

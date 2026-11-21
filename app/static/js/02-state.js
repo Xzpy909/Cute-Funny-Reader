@@ -148,7 +148,7 @@ S.newBatch = new Set();
 const BATCH_GAP = 30 * 60;
 function latestBatches() {
   const by = {};
-  for (const b of Object.values(S.books)) (by[b.library] ||= []).push(b);
+  for (const b of Object.values(S.books)) if (!isTrashed(b)) (by[b.library] ||= []).push(b);
   const out = new Set();
   for (const list of Object.values(by)) {
     list.sort((a, b) => (b.added || 0) - (a.added || 0));
@@ -174,6 +174,7 @@ function buildSeries() {
   S.newBatch = latestBatches();
   const map = {};
   for (const b of Object.values(S.books)) {
+    if (isTrashed(b)) continue;                     // in the trash: only on the Trash page (until it's restored)
     (map[b.seriesId] ||= { id: b.seriesId, name: b.series, library: b.library, books: [] }).books.push(b);
   }
   for (const e of S.empty || []) {
@@ -348,9 +349,11 @@ function renderSidebar() {
   $('#nUnread').textContent = sInfo.filter(([, i]) => i.read === 0 && i.frac === 0).length || '';
   $('#nDone').textContent = sInfo.filter(([, i]) => i.unread === 0).length || '';
   $('#nFavs').textContent = S.favs.reduce((n, f) => n + favItems(f).length, 0) || '';
+  const tr = S.status?.trash; $('#nTrash').textContent = tr?.count || '';
+  $('#mainNav [data-nav="trash"]').title = tr?.count ? `${plural(tr.count, 'item')} · ${fmtBytes(tr.bytes)}` : 'The trash is empty';
   $('#libNav').innerHTML = S.libraries.map(l =>
     `<button data-lib="${l.id}" class="${S.lib === l.id ? 'on' : ''}"><span class="dot" style="background:${esc(l.color)}"></span>${esc(l.name)} <span class="count">${l.series || ''}</span></button>`).join('');
-  $$('#mainNav button').forEach(b => b.classList.toggle('on', S.inStorage ? b.dataset.nav === 'storage' : S.inFavs ? b.dataset.nav === 'favs' : !S.lib && b.dataset.nav === (S.filter === 'all' ? 'home' : S.filter)));
+  $$('#mainNav button').forEach(b => b.classList.toggle('on', S.inTrash ? b.dataset.nav === 'trash' : S.inStorage ? b.dataset.nav === 'storage' : S.inFavs ? b.dataset.nav === 'favs' : !S.lib && b.dataset.nav === (S.filter === 'all' ? 'home' : S.filter)));
   renderServer();
 }
 function renderServer() {

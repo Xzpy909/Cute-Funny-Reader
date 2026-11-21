@@ -12,14 +12,58 @@ import uuid
 from pathlib import Path
 
 from . import library as _L
-from .library import JUNK_FILES, TRASH_DELAY, TRASH_DIR, TRASH_KEEP, log
+from .library import COL_MARK, JUNK_FILES, TRASH_DELAY, TRASH_DIR, TRASH_KEEP, log, safe_component
 
 
 class TrashMixin:
     # ---- Trash
-    # "Delete" doesn't delete: the book is marked (instant — the card greys out, and can be put back with one
-    # click). After TRASH_DELAY the worker moves its file into <account>/.trash, where it stays TRASH_KEEP
-    # before it is really deleted. Reading progress and edits are kept until then, so a restore is complete.
+    # "Delete" doesn't delete: the book is marked (instant — it leaves the library views at once, and Undo /
+    # Restore puts it back). After TRASH_DELAY the worker moves its file into <account>/.trash, where it stays
+    # for the keep time (an app setting; TRASH_KEEP_DAYS is the default; 0 = never deleted by itself) before it is
+    # really deleted. Reading progress and edits are kept until then, so a restore is complete.
+    KEEP_CHOICES = (7, 14, 30, 90, 0)
+
+    def trash_keep_days(self) -> int:
+        """How long the trash keeps things, in days — 0: until it's emptied by hand."""
+        v = self.settings.get("trashKeepDays")
+        return int(v) if isinstance(v, int) and v in self.KEEP_CHOICES else TRASH_KEEP // 86400
+
+    def set_trash_keep_days(self, days: int) -> int:
+        if days not in self.KEEP_CHOICES:
+            raise ValueError("Keep the trash for 7, 14, 30 or 90 days — or until it's emptied (0)")
+        self.settings.put("trashKeepDays", days)
+        return days
+
+    def _days_left(self, deleted: float, now: float) -> int | None:
+        keep = self.trash_keep_days()
+        return None if not keep else max(0, int((deleted + keep * 86400 - now) // 86400) + 1)
+
+    def trash_items(self, owner: str | None, libraries: set) -> list[dict]:
+        """Everything in someone's trash, newest first — items still being moved out (marked) and items already in
+        .trash (bin) alike: what it was, where it was, how big, and how long it stays."""
+        now = time.time()
+        out = []
+        for bid, m in self.trash.all().items():
+            b = self.books.get(bid)
+            if not b or b["library"] not in libraries:
+                continue
+            lib = self.get_library(b["library"]) or {}
+            out.append({"key": "b:" + bid, "kind": "marked", "id": bid, "series": b["series"], "label": b["label"],
+                        "title": b.get("title"), "collection": b.get("collection"), "library": b["library"],
+                        "libraryName": lib.get("name"), "libraryExists": True, "format": b.get("format"),
+                        "pages": b.get("pages"), "size": b.get("size") or 0, "deleted": m["at"],
+                        "daysLeft": self._days_left(m["at"], now)})
+        for tid, e in self.bin.all().items():
+            if e.get("owner") != owner:
+                continue
+            lib = self.get_library(e["library"])
+            out.append({"key": "t:" + tid, "kind": "bin", "tid": tid, "id": e["id"], "series": e["series"],
+                        "label": e["label"], "title": e.get("title"), "collection": e.get("collection"),
+                        "library": e["library"], "libraryName": (lib or {}).get("name") or e.get("libraryName"),
+                        "libraryExists": bool(lib and (_L.LIB_ROOT / lib["path"]).is_dir()), "format": e.get("format"),
+                        "pages": e.get("pages"), "size": e.get("size") or 0, "deleted": e.get("marked") or e["binned"],
+                        "daysLeft": self._days_left(e.get("marked") or e["binned"], now)})
+        return sorted(out, key=lambda x: -x["deleted"])
     def trash_books(self, books: list[dict]) -> int:
         now = int(time.time())
         new = {b["id"]: {"at": now} for b in books if not self.trash.get(b["id"])}
@@ -97,13 +141,13 @@ class TrashMixin:
             d = _L.LIB_ROOT / e["root"] / tid
             if not d.is_dir():
                 self.bin.delete(tid)                            # emptied by hand, or its account was removed
-            elif now - e["binned"] > TRASH_KEEP:
+            elif self.trash_keep_days() and now - (e.get("marked") or e["binned"]) > self.trash_keep_days() * 86400:
                 self.purge_bin([tid])
         return moved
 
     def bin_items(self, owner: str | None) -> list[dict]:
         now = time.time()
-        return sorted(({**e, "tid": tid, "daysLeft": max(0, int((e["binned"] + TRASH_KEEP - now) // 86400) + 1)}
+        return sorted(({**e, "tid": tid, "daysLeft": self._days_left(e.get("marked") or e["binned"], now)}
                        for tid, e in self.bin.all().items() if e.get("owner") == owner), key=lambda e: -e["binned"])
 
     def bin_cover(self, tid: str) -> bytes | None:
@@ -111,18 +155,39 @@ class TrashMixin:
         f = _L.LIB_ROOT / e["root"] / tid / "_cover" if e else None
         return f.read_bytes() if f and f.is_file() else None
 
-    def restore_bin(self, tids: list[str]) -> int:
+    def restore_bin(self, tids: list[str], into: str | None = None) -> int:
+        """Put trash items back where they were: a missing folder is recreated (a collection gets its marker back),
+        a taken name gets a free one ("Name (2)"). An item whose library is gone needs `into` — another library's
+        id — and lands there in the same collection / series folders; without it a LookupError names the items."""
+        orphans = []
+        for tid in tids:
+            e = self.bin.get(tid)
+            if e:
+                lib = self.get_library(e["library"])
+                if not lib or not (_L.LIB_ROOT / lib["path"]).is_dir():
+                    orphans.append(tid)
+        target = self.get_library(into) if into else None
+        if orphans and not (target and (_L.LIB_ROOT / target["path"]).is_dir()):
+            raise LookupError(orphans)
         n = 0
         for tid in tids:
             e = self.bin.get(tid)
             if not e:
                 continue
-            lib = self.get_library(e["library"])
-            if not lib or not (_L.LIB_ROOT / lib["path"]).is_dir():
-                raise ValueError(f"“{e.get('libraryName') or 'Its library'}” no longer exists — create it again to restore this")
-            src = _L.LIB_ROOT / e["root"] / tid / e["name"]
-            dest = self._unique(_L.LIB_ROOT / e["rel"])
+            lib = target if tid in orphans else self.get_library(e["library"])
+            base = _L.LIB_ROOT / lib["path"]
+            if tid not in orphans and e["rel"].startswith(lib["path"] + "/"):
+                dest = _L.LIB_ROOT / e["rel"]                    # where it was
+            else:                                                # another library / the library's folder was renamed
+                parts = [safe_component(x) for x in (e.get("collection"), e.get("series")) if x and safe_component(x)]
+                dest = base.joinpath(*parts, e["name"])
+            col = base / safe_component(e["collection"]) if e.get("collection") and safe_component(e["collection"]) else None
+            col_new = bool(col) and not col.exists()
+            dest = self._unique(dest)
             dest.parent.mkdir(parents=True, exist_ok=True)
+            if col_new and col in dest.parents:
+                (col / COL_MARK).touch()                         # recreated: still a collection, not a series folder
+            src = _L.LIB_ROOT / e["root"] / tid / e["name"]
             self._retry(shutil.move, str(src), str(dest))
             shutil.rmtree(_L.LIB_ROOT / e["root"] / tid, ignore_errors=True)
             self.bin.delete(tid)

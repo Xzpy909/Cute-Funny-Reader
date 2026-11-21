@@ -385,7 +385,7 @@ function cmpClick(e) {
 // unconverted series; the kept originals; and the night-only hours for the optimizer.
 const hh = h => `${String(h).padStart(2, '0')}:00`;
 async function renderStorage() {
-  $('#viewHome').classList.remove('on'); $('#viewSeries').classList.remove('on'); $('#viewFavs').classList.remove('on');
+  $('#viewHome').classList.remove('on'); $('#viewSeries').classList.remove('on'); $('#viewFavs').classList.remove('on'); $('#viewTrash').classList.remove('on');
   const v = $('#viewStorage'); v.classList.add('on'); S.inStorage = true;
   if (!v.dataset.ready) {
     v.dataset.ready = 1;
@@ -419,6 +419,11 @@ async function renderStorage() {
       ? `<span>${plural(st.kept.books, 'original')} kept for Undo · about ${fmtBytes(st.kept.bytes)} in the config folder · each is deleted ${plural(st.kept.days, 'day')} after its conversion.</span>
          <button type="button" class="btn-sm" data-stdrop>Delete them now</button>`
       : `<span>None. Originals are kept for ${plural(st.kept.days, 'day')} after a conversion, so it can be undone.</span>`}</div>
+    <div class="shelf-h slim"><div><h2>Trash</h2></div></div>
+    <div class="stbox">${S.status?.trash?.count
+      ? `<span>${plural(S.status.trash.count, 'item')} in the trash · ${fmtBytes(S.status.trash.bytes)} that can be freed.</span>
+         <button type="button" class="btn-sm" data-sttrash>Open trash</button><button type="button" class="btn-sm" data-stempty>Empty trash</button>`
+      : '<span>The trash is empty.</span>'}</div>
     <div class="shelf-h slim"><div><h2>When to optimize</h2></div></div>
     <div class="stbox"><label class="optchk"><input type="checkbox" id="stNight" ${sch.on ? 'checked' : ''}> Only between
         <select id="stFrom" aria-label="From">${hours(sch.from)}</select> and <select id="stTo" aria-label="Until">${hours(sch.to)}</select></label>
@@ -434,6 +439,17 @@ function storageClick(e) {
     return openOptimize({ sel: { series: list.map(s => s.id) }, books: list.flatMap(s => s.books), title: `the ${list.length} biggest` });
   }
   const op = t.closest('.stopen'); if (op) { location.hash = `#/series/${op.dataset.series}`; return; }
+  if (t.closest('[data-sttrash]')) { location.hash = '#/trash'; return; }
+  const em = t.closest('[data-stempty]');
+  if (em) {
+    if (!em.classList.contains('armed')) {
+      em.classList.add('armed', 'danger'); em.textContent = `Free ${fmtBytes(S.status.trash.bytes)} — can’t be undone`;
+      return setTimeout(() => { if (em.isConnected) { em.classList.remove('armed', 'danger'); em.textContent = 'Empty trash'; } }, 4000);
+    }
+    em.disabled = true;
+    jsonFetch('POST', '/api/trash/purge', { all: true }).then(() => { appToast(`Trash emptied — ${fmtBytes(S.status.trash.bytes)} freed`); return load(); }).then(renderStorage).catch(err => appToast(err.message));
+    return;
+  }
   const dr = t.closest('[data-stdrop]');
   if (dr) {
     if (!dr.classList.contains('armed')) {                         // can't be undone: a second click

@@ -411,6 +411,7 @@ class Library(FilesMixin, EditsMixin, TrashMixin, ScanMixin, MediaMixin):
         self.edits = Store(self.db, "edits", CONFIG_DIR / "edits.json")      # user edits to metadata, per book id
         self.trash = Store(self.db, "trash")      # book id → {"at"}: marked for the trash, still in its place
         self.bin = Store(self.db, "bin")          # trash id → what was moved into .trash, and where it came from
+        self.settings = Store(self.db, "settings")  # app-wide settings changed in the app (e.g. "trashKeepDays")
         self.ids = Identities(self.db)                                        # permanent book ids, whatever the path
         self.groups = Names(self.db)                                          # permanent series / collection ids
         try:
