@@ -194,19 +194,85 @@ def status():
             "trash": {"count": len(trash), "bytes": sum(x["size"] for x in trash)}}
 
 
+def _file_error(e: Exception) -> tuple[int, str] | None:
+    """What a failed file operation tells the person (status, message); None: not one of these."""
+    if isinstance(e, KeyError):
+        return 404, "not found — try rescanning"
+    if isinstance(e, ValueError):
+        return 400, str(e)
+    if isinstance(e, OSError):
+        msg = str(e.strerror or e)
+        if "try again" in msg:                     # an open file on the host, not a read-only mount
+            return 409, f"Couldn’t finish: {msg[0].upper() + msg[1:]}."
+        return 400, f"File operation failed ({msg}). Is /data writable?"
+    return None
+
+
 def _file_op(fn, *args, **kw):
     try:
         fn(*args, **kw)
-    except KeyError:
-        raise HTTPException(404, "not found — try rescanning")
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    except OSError as e:
-        msg = str(e.strerror or e)
-        if "try again" in msg:                     # an open file on the host, not a read-only mount
-            raise HTTPException(409, f"Couldn’t finish: {msg[0].upper() + msg[1:]}.")
-        raise HTTPException(400, f"File operation failed ({msg}). Is /data writable?")
+    except (KeyError, ValueError, OSError) as e:
+        raise HTTPException(*_file_error(e))
     return {"ok": True}
+
+
+# ---- big file operations run as jobs (docs/JOBS.md): the request waits a moment; anything longer returns
+# 202 {job} at once and the page follows the job's progress (the working pill: "Moving 12 of 340 · ~40 s left")
+FILE_OPS = {}                                  # name → fn(**args) → dict merged into the answer
+QUICK = 1.5                                    # seconds a request waits for its job before answering 202
+
+
+def file_op(name):
+    def reg(fn):
+        FILE_OPS[name] = fn
+        return fn
+    return reg
+
+
+class FileOpFailed(Exception):
+    def __init__(self, status, msg):
+        super().__init__(msg)
+        self.status = status
+
+
+def _run_file_op(ctx):
+    try:
+        out = FILE_OPS[ctx.params["op"]](**ctx.params.get("args", {}))
+    except Exception as e:
+        if ctx.count:                              # stopped halfway (cancelled / failed): the library shows what's where
+            try:
+                lib.scan()
+            except Exception:  # noqa: BLE001
+                pass
+        if isinstance(e, (KeyError, ValueError, OSError)):
+            status, msg = _file_error(e)
+            ctx.save(status=status)
+            raise FileOpFailed(status, msg) from e
+        raise
+    return out or {}
+
+
+jobs.kind("files", _run_file_op, lane="user", pause=False)   # not resumable: a restart fails it (files moved so far stay)
+
+
+def _as_job(op: str, title: str, total: int | None = None, unit: str = "files", **args):
+    """Run a file operation as a job. Quick ones answer like before ({"ok": True, …}); long ones answer 202 with
+    the job, and the page waits for it."""
+    j = jobs.submit("files", me()["id"], title, {"op": op, "args": args}, total=total, unit=unit)
+    if not jobs.running:                           # (no workers: tests, scripts) — here and now
+        jobs.run_now(j["id"])
+    done = jobs.wait(j["id"], QUICK)
+    if done["state"] == "done":
+        jobs.control(j["id"], "dismiss")
+        return {"ok": True, **(done["result"] or {})}
+    if done["state"] == "failed":
+        status = (jobs.mem.get(j["id"], {}).get("data") or {}).get("status", 400)
+        jobs.control(j["id"], "dismiss")
+        raise HTTPException(status, done["error"])
+    if done["state"] == "cancelled":
+        jobs.control(j["id"], "dismiss")
+        raise HTTPException(409, "Cancelled")
+    return JSONResponse({"job": done}, status_code=202)
 
 
 @app.post("/api/books/{bid}/move")
@@ -226,7 +292,14 @@ def move_series(sid: str, body: dict = Body(...)):
     if not body.get("library") and not body.get("into") and body.get("collection") is None:
         raise HTTPException(400, "Choose a library or a series")
     own_series(sid); own_lib(body.get("library")); own_series(body.get("into")); own_collection(body.get("collection"))
-    return _file_op(lib.move_series, sid, library=body.get("library"), into=body.get("into"), collection=body.get("collection"))
+    name = (lib.series_books(sid) or [{}])[0].get("series") or "series"
+    return _as_job("move_series", f"Moving {name}", len(lib.series_books(sid)) or None, sid=sid, library=body.get("library"),
+                   into=body.get("into"), collection=body.get("collection"))
+
+
+@file_op("move_series")
+def _op_move_series(sid, library=None, into=None, collection=None):
+    lib.move_series(sid, library=library, into=into, collection=collection)
 
 
 @app.delete("/api/series/{sid}")
@@ -251,9 +324,12 @@ def delete_series_many(body: dict = Body(...)):
         raise HTTPException(400, "Nothing selected")
     for i in ids:
         own_series(i)
-    out = {}
-    _file_op(lambda: out.update(deleted=lib.delete_series_many(ids)))
-    return {"ok": True, **out}
+    return _as_job("delete_series", f"Deleting {len(ids)} series", None, ids=ids)
+
+
+@file_op("delete_series")
+def _op_delete_series(ids):
+    return {"deleted": lib.delete_series_many(ids)}
 
 
 @app.post("/api/libraries/{lid}/collections")
@@ -267,21 +343,35 @@ def create_collection(lid: str, body: dict = Body(...)):
 @app.patch("/api/collections/{cid}")
 def rename_collection(cid: str, body: dict = Body(...)):
     own_collection(cid)
-    out = {}
-    _file_op(lambda: out.update(id=lib.rename_collection(cid, body.get("name", ""))))
-    return out
+    r = _as_job("rename_collection", f"Renaming to {body.get('name', '')}", None, cid=cid, name=body.get("name", ""))
+    return r if isinstance(r, JSONResponse) else {"id": r["id"]}
+
+
+@file_op("rename_collection")
+def _op_rename_collection(cid, name):
+    return {"id": lib.rename_collection(cid, name)}
 
 
 @app.post("/api/collections/{cid}/ungroup")
 def ungroup_collection(cid: str):
     own_collection(cid)
-    return _file_op(lib.ungroup_collection, cid)
+    return _as_job("ungroup", "Ungrouping", None, cid=cid)
+
+
+@file_op("ungroup")
+def _op_ungroup(cid):
+    lib.ungroup_collection(cid)
 
 
 @app.delete("/api/collections/{cid}")
 def delete_collection(cid: str):
     own_collection(cid)
-    return _file_op(lib.delete_collection, cid)
+    return _as_job("delete_collection", "Deleting a collection", None, cid=cid)
+
+
+@file_op("delete_collection")
+def _op_delete_collection(cid):
+    lib.delete_collection(cid)
 
 
 @app.post("/api/libraries/{lid}/series")
@@ -350,7 +440,13 @@ def move_books(body: dict = Body(...)):
     for i in ids:
         book_or_404(i)
     own_lib(body.get("library")); own_series(body.get("seriesId"))
-    return _file_op(lib.move_books, ids, library=body.get("library"), series_id=body.get("seriesId"), new_series=body.get("newSeries"))
+    return _as_job("move_books", f"Moving {len(ids)} {'file' if len(ids) == 1 else 'files'}", len(ids), ids=ids,
+                   library=body.get("library"), series_id=body.get("seriesId"), new_series=body.get("newSeries"))
+
+
+@file_op("move_books")
+def _op_move_books(ids, library=None, series_id=None, new_series=None):
+    lib.move_books(ids, library=library, series_id=series_id, new_series=new_series)
 
 
 @app.post("/api/books/delete")
@@ -1133,6 +1229,14 @@ def optimize_schedule(body: dict = Body(...)):
 @app.post("/api/optimize/originals/clear")
 def optimize_originals_clear():
     return {"deleted": opt.drop_originals(me()["id"])}
+
+
+@app.get("/api/jobs/{jid}")
+def job_get(jid: str):
+    j = jobs.get(jid)
+    if not j or not jobs._may(jobs.mem[jid], me()) and jobs.mem[jid]["owner"] is not None:
+        raise HTTPException(404, "job not found")
+    return j
 
 
 @app.get("/api/jobs")

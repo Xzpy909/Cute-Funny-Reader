@@ -66,7 +66,17 @@ def run(ctx):
 ## Controls
 
 `POST /api/jobs/{id}/{pause|resume|cancel|dismiss}` — for your own jobs (the admin may also control system
-jobs). Pause and cancel only flip the state; the job notices at its next `ctx.check()`.
+jobs). A queued job is paused / cancelled at once; a running one gets `stopping: "pause" | "cancel"` and stays
+`running` until it notices at its next `ctx.check()` — then it is really paused / cancelled (a cancelled move has
+already rescanned, so the library shows what's where).
+
+## File operations
+
+Moving books or series, merging, deleting several series, renaming / ungrouping / deleting a collection run as
+`files` jobs (lane `user`, cancel yes, pause no, not resumable). The request waits up to 1.5 s: a quick one
+answers exactly as before. A longer one answers `202 {"job": …}`; the page's fetch follows that job — its
+progress and a Cancel button in the working pill — and then hands the caller the usual answer. Progress is
+counted deep inside the library code: `jobs.step(label)` after each file moved (outside a job it does nothing).
 
 ## Live updates: one stream
 
