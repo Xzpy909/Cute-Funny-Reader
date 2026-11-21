@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from . import library as _L
+from .jobs import step as job_step
 from .library import BOOK_EXT, COL_MARK, JUNK_FILES, MEDIA_EXT, REPACK_EXT, SQUARE, VIDEO_EXT, _remove, collection_key, cosplay_name, joins_existing, log, parse_number, safe_component, safe_rel, same_case, series_key, sibling_works, strip_brackets, tidy, variant_groups
 
 
@@ -460,6 +461,7 @@ class FilesMixin:
         self._retry(shutil.move, str(src), str(dest))
         self._moved(b["rel"], dest.relative_to(_L.LIB_ROOT).as_posix())
         self._prune(src.parent)
+        job_step(src.name)                         # one more file for the job running this (if any)
 
     def _book(self, bid: str) -> dict:
         b = self.books.get(bid)
@@ -556,6 +558,7 @@ class FilesMixin:
             self._retry(_remove, src, b)
             self._forget(b["id"])
             self._prune(src.parent)
+            job_step(src.name)
         self.scan()
 
     # ---- Empty folders

@@ -665,3 +665,28 @@ def test_storage_page(heic_server, browser):
 def test_zz_nothing_went_missing(home_page):
     names = home_page.evaluate("S.series.map(s => s.name + ':' + s.books.length + (seriesTrashed(s) ? ':trashed' : '')).sort()")
     assert names == ["Beach:1", "Maid:1", "Starfall:2", "Test Novel:2"], names
+
+
+def test_a_long_operation_follows_its_job_in_the_pill(page):
+    """A 202 {job} answer: the pill shows the job's progress (and Cancel) until it's done, then the caller gets the
+    usual answer."""
+    calls = {"n": 0}
+
+    def job(route):
+        calls["n"] += 1
+        state = {"id": "j1", "kind": "files", "title": "Moving", "unit": "files", "total": 4, "canCancel": True,
+                 "state": "running", "done": 1, "eta": 6, "label": "Starfall 02.cbz"}
+        if calls["n"] > 4:
+            state.update(state="done", done=4, eta=None, label=None, result={"moved": 4})
+        route.fulfill(json=state)
+    page.route("**/api/jobs/j1", job)
+    page.route("**/api/jobs/j1/dismiss", lambda r: r.fulfill(json={"ok": True}))
+    page.route("**/api/series/zz/move", lambda r: r.fulfill(status=202, json={"job": {
+        "id": "j1", "state": "queued", "done": 0, "total": 4, "unit": "files", "canCancel": True}}))
+    page.evaluate("() => { window._res = fetch('/api/series/zz/move', {method: 'POST', body: '{}'}).then(r => r.json().then(d => [r.status, d])); }")
+    page.wait_for_function("document.querySelector('#working small')?.textContent.includes('1 of 4 files')")
+    txt = page.inner_text("#working small")
+    assert "~6 s left" in txt and "Starfall 02.cbz" in txt
+    assert page.is_visible("#working .wcancel")
+    assert page.evaluate("window._res") == [200, {"ok": True, "moved": 4}]
+    page.wait_for_selector("#working .wcancel", state="hidden")

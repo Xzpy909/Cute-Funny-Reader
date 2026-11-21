@@ -741,12 +741,15 @@ class Optimizer:
             self.reg._write(j)
         more = self._one(Ctx(self.reg, j["id"], j["params"], j["data"]))
         with self.reg.cv:
-            if j["state"] == "running" and more:
+            stopping, j["stopping"] = j.get("stopping"), None
+            if stopping == "cancel":
+                j.update(state="cancelled", finished=time.time(), label=None)
+            elif stopping == "pause":
+                j["state"] = "paused"
+            elif more:
                 j["state"] = "queued"
-            elif j["state"] == "running":
+            else:
                 j.update(state="done", finished=time.time(), done=j.get("total") or j["done"], label=None)
-            elif j["state"] == "cancelled" and not j.get("finished"):
-                j.update(finished=time.time(), label=None)
             self.reg._write(j)
             self.reg.cv.notify_all()
         self.reg._tell(j, force=True)

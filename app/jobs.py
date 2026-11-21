@@ -10,6 +10,7 @@ whatever resuming needs. Every change is announced to `listeners` (the /api/even
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import secrets
 import threading
@@ -29,6 +30,17 @@ KEEP = 7 * 86400                                         # finished jobs of a pe
 SAVE_EVERY = 2.0                                         # progress reaches the database at most this often
 NOTIFY_EVERY = 0.25                                      # … and the live stream at most this often (per job)
 PRIVATE = ("params", "data", "owner")
+current: contextvars.ContextVar["Ctx | None"] = contextvars.ContextVar("job", default=None)   # the job this thread runs
+
+
+def step(label: str | None = None, n: int = 1):
+    """Called by code deep inside an operation (e.g. after each file moved): counts one item for the job this
+    thread is running, if any, and stops there when the job was cancelled. Outside a job: nothing."""
+    ctx = current.get()
+    if ctx is not None:
+        ctx.count += n
+        ctx.progress(ctx.count, label=label)
+        ctx.check()
 
 
 class Paused(Exception):
@@ -58,6 +70,7 @@ class Ctx:
     id: str
     params: dict
     data: dict = field(default_factory=dict)
+    count: int = 0                   # items counted with jobs.step()
 
     def check(self):
         state = self.jobs._state(self.id)
@@ -86,6 +99,7 @@ class Jobs:
         self._told: dict[str, float] = {}
         self._threads: list[threading.Thread] = []
         self._stop = False
+        self.running = False                                   # workers started (else: run_now on the caller's thread)
         for jid, j in self.store.all().items():
             self.mem[jid] = j
 
@@ -109,6 +123,7 @@ class Jobs:
                 self._write(j)
 
     def start_workers(self, lanes: dict | None = None):
+        self.running = True
         for lane, n in (lanes or LANES).items():
             for i in range(n):
                 t = threading.Thread(target=self._worker, args=(lane,), name=f"jobs-{lane}-{i}", daemon=True)
@@ -118,6 +133,7 @@ class Jobs:
     def stop(self):
         with self.cv:
             self._stop = True
+            self.running = False
             self.cv.notify_all()
 
     # ---- starting and controlling
@@ -127,7 +143,7 @@ class Jobs:
         now = time.time()
         j = {"id": secrets.token_hex(5), "kind": kind, "owner": owner, "system": owner is None, "title": title,
              "state": "queued", "done": 0, "total": total, "unit": unit, "label": None, "created": now,
-             "started": None, "finished": None, "error": None, "result": None,
+             "started": None, "finished": None, "error": None, "result": None, "stopping": None,
              "canPause": k.pause, "canCancel": k.cancel, "params": params or {}, "data": {}}
         with self.cv:
             self.mem[j["id"]] = j
@@ -143,14 +159,20 @@ class Jobs:
             if not j or not self._may(j, user):
                 raise KeyError(jid)
             st = j["state"]
-            if action == "pause" and st in ("queued", "running") and j["canPause"]:
+            # a running job keeps running until it notices (at its next check): until then it is "stopping"
+            if action == "pause" and st == "running" and j["canPause"] and not j.get("stopping"):
+                j["stopping"] = "pause"
+            elif action == "pause" and st == "queued" and j["canPause"]:
                 j["state"] = "paused"
+            elif action == "resume" and st == "running" and j.get("stopping") == "pause":
+                j["stopping"] = None
             elif action == "resume" and st == "paused":
                 j["state"] = "queued"
-            elif action == "cancel" and st in ACTIVE and j["canCancel"]:
+            elif action == "cancel" and st == "running" and j["canCancel"]:
+                j["stopping"] = "cancel"
+            elif action == "cancel" and st in ("queued", "paused") and j["canCancel"]:
                 j["state"] = "cancelled"
-                if st != "running":                          # a running one finishes when it notices
-                    j["finished"] = time.time()
+                j["finished"] = time.time()
             elif action == "dismiss" and st in FINISHED:
                 self.mem.pop(jid, None)
                 self.store.delete(jid)
@@ -242,6 +264,7 @@ class Jobs:
         k = self.kinds[j["kind"]]
         ctx = Ctx(self, j["id"], j["params"], j.get("data") or {})
         state, error, result = "done", None, None
+        token = current.set(ctx)
         try:
             result = k.run(ctx)
         except Paused:
@@ -251,15 +274,16 @@ class Jobs:
         except Exception as e:  # noqa: BLE001
             log.warning("job %s (%s) failed: %s", j["id"], j["kind"], e)
             state, error = "failed", str(e)[:300] or e.__class__.__name__
+        finally:
+            current.reset(token)
         with self.cv:
             cur = self.mem.get(j["id"])
             if not cur:
                 return
-            if state == "done" and cur["state"] == "cancelled":
-                state = "cancelled"                          # cancelled after the last check: it still finished
-            if state == "paused" and cur["state"] == "cancelled":
+            if state == "paused" and cur.get("stopping") == "cancel":
                 state = "cancelled"
             cur["state"] = state
+            cur["stopping"] = None
             cur["error"] = error
             if result is not None:
                 cur["result"] = result
@@ -298,7 +322,9 @@ class Jobs:
     def _state(self, jid: str) -> str | None:
         with self.lock:
             j = self.mem.get(jid)
-            return j["state"] if j else "cancelled"
+            if not j:
+                return "cancelled"
+            return {"pause": "paused", "cancel": "cancelled"}.get(j.get("stopping"), j["state"])
 
     def _progress(self, jid, done, total, unit, label):
         with self.lock:

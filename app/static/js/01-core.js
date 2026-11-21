@@ -86,12 +86,16 @@ const ico = (n, s = 19) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" 
 /* ======================= API ======================= */
 /* ---------- "working…" pill: any change sent to the server that takes a moment (deleting / renaming / moving
    hundreds of series…) shows what's happening and for how long, so a long operation never looks frozen ---------- */
-const WORK = { n: 0, label: '', start: 0, showT: null, hideT: null, tick: null, sub: '' };
+const WORK = { n: 0, label: '', start: 0, showT: null, hideT: null, tick: null, sub: '', job: null };
 function workEl() {
   let el = $('#working');
   if (!el) {
     el = document.createElement('div'); el.id = 'working'; el.className = 'glass'; el.setAttribute('role', 'status');
-    el.innerHTML = '<span class="wbook"><i></i><i></i><i></i></span><div><b></b><small></small></div>';
+    el.innerHTML = '<span class="wbook"><i></i><i></i><i></i></span><div><b></b><small></small></div><button type="button" class="wcancel" hidden>Cancel</button>';
+    el.querySelector('.wcancel').onclick = e => {
+      const b = e.currentTarget; if (!WORK.job) return; b.disabled = true; b.textContent = 'Stopping…';
+      _fetch(`/api/jobs/${WORK.job.id}/cancel`, { method: 'POST' });
+    };
     document.body.appendChild(el);
   }
   return el;
@@ -99,7 +103,32 @@ function workEl() {
 function workPaint() {
   const el = workEl(), secs = Math.floor((performance.now() - WORK.start) / 1000);
   el.querySelector('b').textContent = WORK.label;
-  el.querySelector('small').textContent = [WORK.sub, secs >= 2 ? `${secs} s` : '', secs >= 8 ? 'big folders take a while — it’s still going' : ''].filter(Boolean).join(' · ');
+  const j = WORK.job, c = el.querySelector('.wcancel');
+  el.querySelector('small').textContent = j ? jobText(j) || `${secs} s`
+    : [WORK.sub, secs >= 2 ? `${secs} s` : '', secs >= 8 ? 'big folders take a while — it’s still going' : ''].filter(Boolean).join(' · ');
+  el.classList.toggle('hasjob', !!j?.canCancel);
+  c.hidden = !j?.canCancel; if (!j) { c.disabled = false; c.textContent = 'Cancel'; }
+}
+// a job's progress in a few words: "12 of 340 files · ~40 s left · Starfall 03.cbz"
+const fmtLeft = s => s == null ? '' : s < 60 ? `~${Math.max(1, Math.round(s))} s left` : s < 3600 ? `~${Math.round(s / 60)} min left` : `~${(s / 3600).toFixed(1)} h left`;
+function jobText(j) {
+  const n = j.total ? `${j.done} of ${j.total} ${j.unit || ''}`.trim() : j.done ? `${j.done} ${j.unit || ''}`.trim() : '';
+  return [n, fmtLeft(j.eta), j.label].filter(Boolean).join(' · ');
+}
+// a long operation answers 202 {job}: follow it here (its progress in the pill, Cancel on it), then answer the
+// way a quick one does — so whoever asked just awaits the response, as before
+async function followJob(job) {
+  WORK.job = job; workPaint();
+  try {
+    while (!['done', 'failed', 'cancelled'].includes(job.state)) {
+      await new Promise(r => setTimeout(r, 600));
+      try { const r = await _fetch(`/api/jobs/${job.id}`); if (r.ok) job = await r.json(); else if (r.status === 404) break; } catch {}
+      WORK.job = job; workPaint();
+    }
+  } finally { WORK.job = null; workPaint(); }
+  _fetch(`/api/jobs/${job.id}/dismiss`, { method: 'POST' }).catch(() => {});
+  const ok = job.state === 'done', body = ok ? { ok: true, ...(job.result || {}) } : { detail: job.state === 'cancelled' ? 'Cancelled — what was already moved stays where it is' : job.error || 'It didn’t finish' };
+  return new Response(JSON.stringify(body), { status: ok ? 200 : 409, headers: { 'Content-Type': 'application/json' } });
 }
 // start(label) → stop(); nested / back-to-back operations share one pill (no flicker between them)
 function workStart(label) {
@@ -153,7 +182,11 @@ const _fetch = window.fetch.bind(window);   // the browser's own fetch (used dir
     if (method === 'GET' || !url.startsWith('/api/') || url.startsWith('/api/progress') || url.startsWith('/api/auth') || url.startsWith('/api/optimize/estimate') || url.startsWith('/api/jobs') || init.keepalive) return guard(_fetch(input, init), url);
     let body = null; try { body = typeof init.body === 'string' ? JSON.parse(init.body) : null; } catch {}
     const stop = workStart(workLabel(method, url, body));
-    return guard(_fetch(input, init), url).finally(stop);
+    return guard(_fetch(input, init), url).then(async r => {
+      if (r.status !== 202) return r;
+      const d = await r.clone().json().catch(() => null);
+      return d?.job ? followJob(d.job) : r;
+    }).finally(stop);
   };
 }
 const api = {
