@@ -96,8 +96,9 @@ class Tracker:
             for …: t.progress(n, label=…)
     """
 
-    def __init__(self, reg: "Jobs | None", kind: str, title: str, owner: str | None, unit: str, total, after: float):
-        self.reg, self.kind, self.title, self.owner, self.unit = reg, kind, title, owner, unit
+    def __init__(self, reg: "Jobs | None", kind: str, title: str, owner: str | None, unit: str, total, after: float,
+                 ref: str | None = None):
+        self.reg, self.kind, self.title, self.owner, self.unit, self.ref = reg, kind, title, owner, unit, ref
         self.total, self.after, self.t0 = total, after, time.time()
         self.done, self.label, self.id = 0, None, None
 
@@ -359,15 +360,15 @@ class Jobs:
 
     # ---- tracked work (see Tracker)
     def track(self, kind: str, title: str, owner: str | None = None, unit: str = "items", total=None,
-              after: float = 1.0) -> Tracker:
-        return Tracker(self, kind, title, owner, unit, total, after)
+              after: float = 1.0, ref: str | None = None) -> Tracker:
+        return Tracker(self, kind, title, owner, unit, total, after, ref)
 
     def _track_open(self, t: Tracker) -> str:
         now = time.time()
         j = {"id": secrets.token_hex(5), "kind": t.kind, "owner": t.owner, "system": t.owner is None, "title": t.title,
              "state": "running", "done": t.done, "total": t.total, "unit": t.unit, "label": t.label, "created": t.t0,
              "started": t.t0, "finished": None, "error": None, "result": None, "stopping": None,
-             "canPause": False, "canCancel": False, "params": {}, "data": {}, "memory": True}
+             "canPause": False, "canCancel": False, "params": {}, "data": {}, "memory": True, "ref": t.ref}
         with self.cv:
             self.mem[j["id"]] = j
         self._tell(j, force=True)

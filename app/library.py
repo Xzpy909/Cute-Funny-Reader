@@ -584,10 +584,13 @@ class Library(FilesMixin, EditsMixin, TrashMixin, ScanMixin, MediaMixin):
         log.info("removed %d librar(y/ies) whose folder no longer exists: %s", len(gone), ", ".join(l["name"] for l in gone))
         return len(gone)
 
-    def track(self, kind: str, title: str, owner: str | None = None, unit: str = "items", total=None, after: float = 1.0):
-        """Long work reported as a job (a scan, the trash mover, a conversion) — see jobs.Tracker."""
+    def track(self, kind: str, title: str, owner: str | None = None, unit: str = "items", total=None, after: float = 1.0,
+              ref: str | None = None):
+        """Long work reported as a job (a scan, the trash mover, a conversion) — see jobs.Tracker. `ref`: what it's
+        about (a book id), so the page can find it."""
         from .jobs import Tracker
-        return self.jobs.track(kind, title, owner, unit, total, after) if self.jobs else Tracker(None, kind, title, owner, unit, total, after)
+        return (self.jobs.track(kind, title, owner, unit, total, after, ref) if self.jobs
+                else Tracker(None, kind, title, owner, unit, total, after, ref))
 
     def get_library(self, lid: str) -> dict | None:
         return next((l for l in self.libraries if l["id"] == lid), None)

@@ -128,7 +128,7 @@ async function boot() {
 }
 function showAuth(setup) {
   if (!$('#auth').hidden && $('#auth').dataset.mode === (setup ? 'setup' : 'login')) return;
-  clearTimeout(pollT); S.me = null; S.loaded = false;
+  clearTimeout(pollT); liveStop(); S.me = null; S.loaded = false;
   document.body.classList.add('authing');
   const a = $('#auth'); a.hidden = false; a.dataset.mode = setup ? 'setup' : 'login';
   a.innerHTML = `<form class="authcard" id="authForm" method="post" action="/" autocomplete="on">

@@ -668,25 +668,44 @@ def test_zz_nothing_went_missing(home_page):
 
 
 def test_a_long_operation_follows_its_job_in_the_pill(page):
-    """A 202 {job} answer: the pill shows the job's progress (and Cancel) until it's done, then the caller gets the
-    usual answer."""
-    calls = {"n": 0}
-
-    def job(route):
-        calls["n"] += 1
-        state = {"id": "j1", "kind": "files", "title": "Moving", "unit": "files", "total": 4, "canCancel": True,
-                 "state": "running", "done": 1, "eta": 6, "label": "Starfall 02.cbz"}
-        if calls["n"] > 4:
-            state.update(state="done", done=4, eta=None, label=None, result={"moved": 4})
-        route.fulfill(json=state)
-    page.route("**/api/jobs/j1", job)
+    """A 202 {job} answer: the pill shows the job's progress (and Cancel) as it arrives on the live stream, then the
+    caller gets the usual answer."""
+    page.wait_for_function("LIVE.ok === true")
     page.route("**/api/jobs/j1/dismiss", lambda r: r.fulfill(json={"ok": True}))
     page.route("**/api/series/zz/move", lambda r: r.fulfill(status=202, json={"job": {
         "id": "j1", "state": "queued", "done": 0, "total": 4, "unit": "files", "canCancel": True}}))
     page.evaluate("() => { window._res = fetch('/api/series/zz/move', {method: 'POST', body: '{}'}).then(r => r.json().then(d => [r.status, d])); }")
+    page.wait_for_function("WORK.job?.id === 'j1'")
+    page.evaluate("""() => liveEvent({type: 'job', job: {id: 'j1', kind: 'files', title: 'Moving', unit: 'files', total: 4,
+        canCancel: true, state: 'running', done: 1, eta: 6, label: 'Starfall 02.cbz'}})""")
     page.wait_for_function("document.querySelector('#working small')?.textContent.includes('1 of 4 files')")
     txt = page.inner_text("#working small")
     assert "~6 s left" in txt and "Starfall 02.cbz" in txt
     assert page.is_visible("#working .wcancel")
+    page.evaluate("() => liveEvent({type: 'job', job: {id: 'j1', state: 'done', done: 4, eta: null, label: null, result: {moved: 4}}})")
     assert page.evaluate("window._res") == [200, {"ok": True, "moved": 4}]
     page.wait_for_selector("#working .wcancel", state="hidden")
+
+
+def test_the_live_stream_feeds_the_pill(page):
+    """The page listens to /api/events; background work (here: a scan) shows in the working pill and goes away."""
+    page.wait_for_function("LIVE.ok === true")                                   # the stream is connected
+    page.evaluate("""() => liveEvent({type: 'job', job: {id: 's1', kind: 'scan', state: 'running', title: 'Scanning',
+        done: 1200, total: 3400, unit: 'files', label: 'Comics', canCancel: false}})""")
+    page.wait_for_selector("#working.on")
+    assert page.inner_text("#working b") == "Scanning"
+    assert page.inner_text("#working small").startswith("1200 of 3400 files")
+    assert not page.is_visible("#working .wcancel")
+    page.evaluate("() => liveEvent({type: 'job', job: {id: 's1', kind: 'scan', state: 'done', done: 3400, total: 3400}})")
+    page.wait_for_function("!document.querySelector('#working').classList.contains('on')")
+
+
+def test_without_the_stream_it_polls(page):
+    """A proxy that holds the stream back: after a few failed tries the same store is filled by polling."""
+    page.route("**/api/events", lambda r: r.abort())
+    page.evaluate("() => { LIVE.failures = 0; liveStart(); }")
+    page.wait_for_function("LIVE.es === null && LIVE.pollT !== null && !LIVE.ok", timeout=20000)
+    page.wait_for_function("LIVE.jobs instanceof Map")
+    page.unroute("**/api/events")
+    page.evaluate("() => liveStart()")
+    page.wait_for_function("LIVE.ok === true")

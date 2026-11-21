@@ -86,15 +86,15 @@ const ico = (n, s = 19) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" 
 /* ======================= API ======================= */
 /* ---------- "working…" pill: any change sent to the server that takes a moment (deleting / renaming / moving
    hundreds of series…) shows what's happening and for how long, so a long operation never looks frozen ---------- */
-const WORK = { n: 0, label: '', start: 0, showT: null, hideT: null, tick: null, sub: '', job: null };
+const WORK = { n: 0, label: '', start: 0, showT: null, hideT: null, tick: null, sub: '', job: null, bg: null };   // bg: see liveBackground
 function workEl() {
   let el = $('#working');
   if (!el) {
     el = document.createElement('div'); el.id = 'working'; el.className = 'glass'; el.setAttribute('role', 'status');
     el.innerHTML = '<span class="wbook"><i></i><i></i><i></i></span><div><b></b><small></small></div><button type="button" class="wcancel" hidden>Cancel</button>';
     el.querySelector('.wcancel').onclick = e => {
-      const b = e.currentTarget; if (!WORK.job) return; b.disabled = true; b.textContent = 'Stopping…';
-      _fetch(`/api/jobs/${WORK.job.id}/cancel`, { method: 'POST' });
+      const b = e.currentTarget, j = WORK.job || WORK.bg; if (!j) return; b.disabled = true; b.textContent = 'Stopping…';
+      _fetch(`/api/jobs/${j.id}/cancel`, { method: 'POST' });
     };
     document.body.appendChild(el);
   }
@@ -103,7 +103,7 @@ function workEl() {
 function workPaint() {
   const el = workEl(), secs = Math.floor((performance.now() - WORK.start) / 1000);
   el.querySelector('b').textContent = WORK.label;
-  const j = WORK.job, c = el.querySelector('.wcancel');
+  const j = WORK.job || (WORK.n === 0 ? WORK.bg : null), c = el.querySelector('.wcancel');
   el.querySelector('small').textContent = j ? jobText(j) || `${secs} s`
     : [WORK.sub, secs >= 2 ? `${secs} s` : '', secs >= 8 ? 'big folders take a while — it’s still going' : ''].filter(Boolean).join(' · ');
   el.classList.toggle('hasjob', !!j?.canCancel);
@@ -119,13 +119,8 @@ function jobText(j) {
 // way a quick one does — so whoever asked just awaits the response, as before
 async function followJob(job) {
   WORK.job = job; workPaint();
-  try {
-    while (!['done', 'failed', 'cancelled'].includes(job.state)) {
-      await new Promise(r => setTimeout(r, 600));
-      try { const r = await _fetch(`/api/jobs/${job.id}`); if (r.ok) job = await r.json(); else if (r.status === 404) break; } catch {}
-      WORK.job = job; workPaint();
-    }
-  } finally { WORK.job = null; workPaint(); }
+  try { job = await liveWait(job.id, j => { WORK.job = j; workPaint(); }); }    // the job's updates: js/13-live.js
+  finally { WORK.job = null; workPaint(); }
   _fetch(`/api/jobs/${job.id}/dismiss`, { method: 'POST' }).catch(() => {});
   const ok = job.state === 'done', body = ok ? { ok: true, ...(job.result || {}) } : { detail: job.state === 'cancelled' ? 'Cancelled — what was already moved stays where it is' : job.error || 'It didn’t finish' };
   return new Response(JSON.stringify(body), { status: ok ? 200 : 409, headers: { 'Content-Type': 'application/json' } });
@@ -144,7 +139,11 @@ function workStart(label) {
   return () => {
     if (done) return; done = true;
     if (--WORK.n > 0) return;
-    WORK.hideT = setTimeout(() => { clearInterval(WORK.tick); $('#working')?.classList.remove('on'); WORK.sub = ''; }, 250);
+    WORK.hideT = setTimeout(() => {
+      WORK.sub = '';
+      if (WORK.bg) { WORK.label = WORK.bg.title; return workPaint(); }   // background work still running: it stays up
+      clearInterval(WORK.tick); $('#working')?.classList.remove('on');
+    }, 250);
   };
 }
 function workLabel(method, url, body) {

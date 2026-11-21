@@ -39,7 +39,7 @@ def test_failed_work_says_why(tmp_path):
 
 
 def _eager(J):
-    J.track = lambda kind, title, owner=None, unit="items", total=None, after=1.0: Tracker(J, kind, title, owner, unit, total, 0)
+    J.track = lambda kind, title, owner=None, unit="items", total=None, after=1.0, ref=None: Tracker(J, kind, title, owner, unit, total, 0, ref)
 
 
 def test_a_scan_and_the_trash_mover_report(lib):

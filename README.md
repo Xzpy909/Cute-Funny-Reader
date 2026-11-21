@@ -117,8 +117,8 @@ Reading progress follows a chapter when it's moved. Empty series folders are cle
 ```
 /data
 └── Manga/                               ← library folder
-    ├── The Reincarnated Evil Dragon/    ← series
-    │   └── The Reincarnated Evil Dragon c045 (2026).cbz
+    ├── Starfall/                        ← series
+    │   └── Starfall c045 (2026).cbz
     └── Some One-shot.cbz                ← loose file = its own series
 ```
 
@@ -154,6 +154,24 @@ its **Advanced** part sets the format (AVIF / lossless WebP), colour (auto = 4:4
 detection. Delete them with ×. They're kept in `config/optimize-presets.json`. A running job keeps the settings it
 started with.
 "Shrink huge photos" is off unless you tick it.
+
+## Background work: the pill and the Jobs panel
+
+Anything that takes longer than a moment shows its progress instead of a spinner:
+
+- **The working pill** (bottom centre) — moves, merges, deleting several series, renaming / ungrouping / deleting a
+  collection: *"Moving Starfall · 12 of 340 files · ~40 s left · Starfall 013.cbz"*, with **Cancel** (it stops
+  between two files; what was already moved stays where it is). Quick changes look as before. A scan, the trash
+  mover or a long move started in another tab shows there too while nothing else does: *"Scanning · 1,200 of
+  3,400 files"*.
+- **The Jobs panel** (bottom right) — ✨ Optimize runs: pause, resume, cancel, **Run now** outside the night
+  hours. They continue after a restart.
+- JPEG XL / HEIC books show their conversion in the reader while it runs.
+
+The page gets all of this live over one connection (`/api/events`), so nothing polls every few seconds and a
+change made in another tab or on another device shows up right away. Behind a reverse proxy that holds such a
+connection back, the page notices and checks every few seconds instead. (nginx: `proxy_buffering off;` for
+`/api/events` keeps it live.) How it works inside: `docs/JOBS.md`.
 
 ## Reader features
 
@@ -229,6 +247,9 @@ started with.
 | `POST /api/trash/restore`, `POST /api/trash/purge` | restore / delete for good (`ids`, `bin`, `all`; restore: `into`) |
 | `PUT /api/trash/settings` | keep time (`keepDays`: 7, 14, 30, 90 or 0 = until emptied; admin) |
 | `POST /api/scan` | trigger rescan |
+| `GET /api/jobs`, `GET /api/jobs/{id}` | background jobs (yours and the system's) |
+| `POST /api/jobs/{id}/{pause\|resume\|cancel\|dismiss}` | control a job |
+| `GET /api/events` | live stream (Server-Sent Events): job updates, "library changed" |
 
 ## Local development (no Docker)
 
