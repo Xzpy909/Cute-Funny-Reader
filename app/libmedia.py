@@ -238,7 +238,7 @@ class MediaMixin:
         state = "done" if done >= len(todo) else (job or {}).get("state", "idle")
         return {"total": len(todo), "done": done, "state": state, "error": (job or {}).get("error")}
 
-    def transcode_start(self, b: dict) -> dict:
+    def transcode_start(self, b: dict, owner: str | None = None) -> dict:
         """Transcode every JPEG XL page of the book in the background (a few at a time); poll transcode_status."""
         st = self.transcode_status(b)
         self._transcode_touch(self._transcode_dir(b))
@@ -252,9 +252,13 @@ class MediaMixin:
 
         def run():
             from concurrent.futures import ThreadPoolExecutor
+            kind = "HEIC" if any(n.lower().endswith(HEIC_EXT) for n in b["entries"]) else "JPEG XL"
             try:
-                with ThreadPoolExecutor(max_workers=max(1, min(4, (os.cpu_count() or 2) - 1))) as ex:
-                    list(ex.map(lambda i: self.transcoded_page(b, i), todo))
+                with self.track("transcode", f"Converting {b['series']} · {b['label']} ({kind})", owner, "pages",
+                                len(todo), after=0) as tracker, \
+                        ThreadPoolExecutor(max_workers=max(1, min(4, (os.cpu_count() or 2) - 1))) as ex:
+                    for _ in ex.map(lambda i: self.transcoded_page(b, i), todo):
+                        tracker.progress(n=1)
                 job["state"] = "done"
             except Exception as e:  # noqa: BLE001
                 log.warning("transcode of %s failed: %s", b["rel"], e)

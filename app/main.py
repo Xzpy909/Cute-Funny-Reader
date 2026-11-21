@@ -44,6 +44,7 @@ jobs = Jobs(lib.db)                    # every background job (docs/JOBS.md)
 opt = Optimizer(lib, jobs)
 hub = Hub(jobs.visible)                # the live stream: GET /api/events
 jobs.listeners.append(hub.publish)
+lib.jobs = jobs                        # scans, the trash mover and conversions report there
 accounts = Accounts(CONFIG_DIR)
 uplog = UploadLog(CONFIG_DIR / "logs")
 favs = Store(Db.at(CONFIG_DIR / "reader.db"), "favorites", CONFIG_DIR / "favorites.json")      # {account id: [list, …]} — references only, never files
@@ -1275,7 +1276,7 @@ async def events(request: Request):
 @app.post("/api/books/{bid}/transcode")
 def transcode_start(bid: str):
     """JPEG XL / HEIC book: start converting its pages to PNG (cached). Poll GET for progress."""
-    return lib.transcode_start(book_or_404(bid))
+    return lib.transcode_start(book_or_404(bid), me()["id"])
 
 
 @app.get("/api/books/{bid}/transcode")

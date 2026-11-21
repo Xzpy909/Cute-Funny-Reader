@@ -29,7 +29,7 @@ SYSTEM_KEEP = 60                                         # finished system jobs 
 KEEP = 7 * 86400                                         # finished jobs of a person: until dismissed, at most this long
 SAVE_EVERY = 2.0                                         # progress reaches the database at most this often
 NOTIFY_EVERY = 0.25                                      # … and the live stream at most this often (per job)
-PRIVATE = ("params", "data", "owner")
+PRIVATE = ("params", "data", "owner", "memory")
 current: contextvars.ContextVar["Ctx | None"] = contextvars.ContextVar("job", default=None)   # the job this thread runs
 
 
@@ -85,6 +85,45 @@ class Ctx:
     def save(self, **data):
         self.data.update(data)
         self.jobs._save_data(self.id, self.data)
+
+
+class Tracker:
+    """Work that runs in its own loop (a scan, the trash mover, a JPEG XL conversion) reported as a job. The job
+    appears only once the work has taken `after` seconds — the many quick scans never show — and lives in memory
+    only (nothing to resume after a restart).
+
+        with jobs.track("scan", "Scanning", unit="files", total=3400) as t:
+            for …: t.progress(n, label=…)
+    """
+
+    def __init__(self, reg: "Jobs | None", kind: str, title: str, owner: str | None, unit: str, total, after: float):
+        self.reg, self.kind, self.title, self.owner, self.unit = reg, kind, title, owner, unit
+        self.total, self.after, self.t0 = total, after, time.time()
+        self.done, self.label, self.id = 0, None, None
+
+    def progress(self, done=None, total=None, label=None, n: int = 0):
+        self.done = self.done + n if done is None else done
+        if total is not None:
+            self.total = total
+        if label is not None:
+            self.label = label
+        if self.reg is None:
+            return
+        if self.id is None:
+            if time.time() - self.t0 < self.after:
+                return
+            self.id = self.reg._track_open(self)
+        self.reg._progress(self.id, self.done, self.total, None, self.label)
+
+    def __enter__(self):
+        if self.reg is not None and self.after <= 0:
+            self.id = self.reg._track_open(self)
+        return self
+
+    def __exit__(self, et, e, tb):
+        if self.reg is not None and self.id is not None:
+            self.reg._track_close(self.id, None if et is None else (str(e)[:300] or et.__name__))
+        return False
 
 
 class Jobs:
@@ -230,7 +269,7 @@ class Jobs:
         with self.lock:
             for j in list(self.mem.values()):
                 if j["state"] in FINISHED and j.get("finished"):
-                    if now - j["finished"] > (SYSTEM_KEEP if j["system"] else KEEP):
+                    if now - j["finished"] > (SYSTEM_KEEP if j["system"] or j.get("memory") else KEEP):
                         self.mem.pop(j["id"], None)
                         self.store.delete(j["id"])
 
@@ -318,6 +357,33 @@ class Jobs:
                     return self.public(j)
                 self.cv.wait(min(left, 0.5))
 
+    # ---- tracked work (see Tracker)
+    def track(self, kind: str, title: str, owner: str | None = None, unit: str = "items", total=None,
+              after: float = 1.0) -> Tracker:
+        return Tracker(self, kind, title, owner, unit, total, after)
+
+    def _track_open(self, t: Tracker) -> str:
+        now = time.time()
+        j = {"id": secrets.token_hex(5), "kind": t.kind, "owner": t.owner, "system": t.owner is None, "title": t.title,
+             "state": "running", "done": t.done, "total": t.total, "unit": t.unit, "label": t.label, "created": t.t0,
+             "started": t.t0, "finished": None, "error": None, "result": None, "stopping": None,
+             "canPause": False, "canCancel": False, "params": {}, "data": {}, "memory": True}
+        with self.cv:
+            self.mem[j["id"]] = j
+        self._tell(j, force=True)
+        return j["id"]
+
+    def _track_close(self, jid: str, error: str | None):
+        with self.cv:
+            j = self.mem.get(jid)
+            if not j:
+                return
+            j.update(state="failed" if error else "done", error=error, finished=time.time(), label=None)
+            if not error and j.get("total"):
+                j["done"] = j["total"]
+            self.cv.notify_all()
+        self._tell(j, force=True)
+
     # ---- what a job calls (through ctx)
     def _state(self, jid: str) -> str | None:
         with self.lock:
@@ -352,7 +418,8 @@ class Jobs:
     # ---- storage and events
     def _write(self, j: dict):
         self._saved[j["id"]] = time.time()
-        self.store.put(j["id"], j)
+        if not j.get("memory"):                                # tracked work isn't kept across restarts
+            self.store.put(j["id"], j)
 
     def _tell(self, j: dict, force: bool = False):
         now = time.time()

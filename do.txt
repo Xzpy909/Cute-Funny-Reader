@@ -68,8 +68,10 @@ on its own, and big deletes / moves / renames are one long request — the "work
        The request returns at once with a job id; the pill shows real progress ("Moving 12 of 340 · ~40 s left").
        DONE 2026-11-21: "files" jobs; the request waits 1.5 s (quick ones answer as before), longer ones answer
        202 {job}; the page's fetch follows the job — "12 of 340 files · ~40 s left · <file>" + Cancel in the pill.
-[ ] 7. Scans, the trash mover and JPEG XL / HEIC conversion report as (system) jobs — the pill can say
+[x] 7. Scans, the trash mover and JPEG XL / HEIC conversion report as (system) jobs — the pill can say
        "Scanning · 1,200 of 3,400 files"; the per-book transcode polling goes.
+       DONE 2026-11-21 (server side): jobs.track() — shows only after 1 s, memory only; scans (files, per
+       library), the trash mover (files), conversions (pages, owned by who opened it). The polling goes in step 8.
 [ ] 8. Frontend: one jobs store fed by /api/events; the working pill and the Jobs panel both read it. If the
        stream can't connect (some proxies), it falls back to polling. Remove the old polling loops.
 [ ] 9. README: the Jobs panel / pill section brought up to date.
