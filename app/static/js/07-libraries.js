@@ -202,7 +202,7 @@ function openCoverPicker(sid) {
       ${books.length > 1 ? `<label class="cvbook">From ${unit}
         <select id="cvBook">${books.map(b => `<option value="${b.id}" ${b.id === book.id ? 'selected' : ''}>${esc(b.label)}${b.title ? ' · ' + esc(b.title) : ''}${b.id === cur.id ? '  ★ current cover' : ''}</option>`).join('')}</select></label>` : ''}
       <div class="cvgrid">${Array.from({ length: book.pages }, (_, i) => vids.has(i)
-        ? `<div class="cvtile vid" title="Videos can't be covers"><span>▶</span><i>${i + 1}</i></div>`
+        ? `<div class="cvtile vid" title="Videos can't be covers"><img loading="lazy" src="${URLS.thumb(book, i, 200)}" alt="" onerror="this.remove()"><span>▶</span><i>${i + 1}</i></div>`
         : `<button type="button" class="cvtile ${i === chosen ? 'on' : ''}" data-cvpage="${i}" title="Page ${i + 1}"><img loading="lazy" src="${URLS.thumb(book, i, 200)}" alt=""><i>${i + 1}</i></button>`).join('')}</div>
       <div class="cvfoot"><span class="hintline">Saved in the reader · <b>Write into files</b> in Edit details puts it into ${books.length > 1 ? 'that ' + unit + '’s' : 'the file’s'} <code>metadata.json</code></span><div class="grow"></div>
         <button type="button" class="btn-ghost" data-cvreset>↺ Default cover</button><button type="button" class="btn-ghost" data-cvclose>Cancel</button></div></div>`;

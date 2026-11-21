@@ -709,3 +709,18 @@ def test_without_the_stream_it_polls(page):
     page.unroute("**/api/events")
     page.evaluate("() => liveStart()")
     page.wait_for_function("LIVE.ok === true")
+
+
+def test_cover_picker_tiles_never_overlap(page):
+    """The tiles clip their picture, which once let the grid squeeze its rows to fit the dialog: the tiles piled
+    on top of each other. However short the window, each row starts below the one before."""
+    page.set_viewport_size({"width": 340, "height": 380})                 # 2 tiles a row, room for less than one
+    page.evaluate("() => openCoverPicker(S.series.find(s => s.name === 'Starfall').id)")
+    page.wait_for_selector(".cvmodal .cvtile")
+    tops = page.evaluate("[...document.querySelectorAll('.cvtile')].map(t => { const r = t.getBoundingClientRect(); return [r.top, r.bottom, r.left]; })")
+    first_col = [t for t in tops if abs(t[2] - tops[0][2]) < 1]
+    assert len(first_col) >= 2
+    for a, b in zip(first_col, first_col[1:]):
+        assert b[0] >= a[1]                                     # the next row starts below this one
+    page.keyboard.press("Escape")
+    page.set_viewport_size({"width": 1100, "height": 900})
