@@ -1,4 +1,61 @@
 TO DO
 =====
+Planned 2026-11-21 from what was left in "do -perf.txt" (now removed). In order: the split first — the job system
+then changes smaller, clearer pieces. Every step ends tested, committed and merged.
 
-(nothing open — the clean-up and redesign ideas are in "do -perf.txt")
+
+PART 1 — FINISH THE SPLIT  (pure restructuring: nothing visible changes)
+-----------------------------------------------------------------------
+[ ] 1. The one big click handler (js/06-events.js, ~150 lines, one listener for the whole page)
+       → a small dispatch table: each data-attribute (data-open, data-series, data-selact, data-mact …) maps to
+       a handler, and each handler lives in the file of its area (cards, selection bar, sidebar, reader, menus).
+       Check: the jsdom walkthrough, old vs new side by side (sign-in, home, series page, reader, Edit details,
+       ⋯ menu, Optimize, review sheet) — same results, no errors.
+[ ] 2. The Library class (~2,300 lines of library.py) → one class built from parts, one file per area:
+         scanning      scan, watch loop, index, discovery of libraries / collections / empty series
+         files         moves, renames, merges, collections, upload targets, Windows-lock retries
+         trash         marking, the delayed mover, emptying
+         edits         saved edits, Write into files, covers, metadata.json writing
+         media         thumbnails, covers, panels, JPEG XL / HEIC transcoding, cache sweep
+       Same public methods and attributes; checked like the library.py split (every method's syntax tree
+       identical, all tests green).
+
+
+PART 2 — ONE BACKGROUND JOB SYSTEM WITH LIVE PROGRESS
+------------------------------------------------------
+Today four kinds of background work each do it their own way: ✨ Optimize has its own queue + Jobs panel,
+scans run in a loop the page polls every 8 s, JPEG XL / HEIC conversion starts a thread per book and is polled
+on its own, and big deletes / moves / renames are one long request — the "working…" pill only counts seconds.
+
+[ ] 3. Design (docs/JOBS.md): one job = kind, owner, title, state (queued / running / paused / done / failed /
+       cancelled), done / total + unit, started, ETA, error. One registry in reader.db (jobs that can resume
+       survive a restart), a small worker pool with priorities (your actions > Optimize > background prep),
+       cancel / pause through a token the job checks between items, progress through one callback.
+[ ] 4. Core: app/jobs.py + GET /api/jobs (every kind) + POST /api/jobs/{id}/{pause|resume|cancel|dismiss}
+       + one live stream GET /api/events (Server-Sent Events) carrying job updates and "library changed".
+       Tests for the registry, the worker, cancel / pause, restart.
+[ ] 5. Move ✨ Optimize onto it (it already behaves like a queue) — the Jobs panel keeps working; its tests stay.
+[ ] 6. Big operations become jobs: deleting / moving / merging many series, renaming collections and libraries.
+       The request returns at once with a job id; the pill shows real progress ("Moving 12 of 340 · ~40 s left").
+[ ] 7. Scans, the trash mover and JPEG XL / HEIC conversion report as (system) jobs — the pill can say
+       "Scanning · 1,200 of 3,400 files"; the per-book transcode polling goes.
+[ ] 8. Frontend: one jobs store fed by /api/events; the working pill and the Jobs panel both read it. If the
+       stream can't connect (some proxies), it falls back to polling. Remove the old polling loops.
+[ ] 9. README: the Jobs panel / pill section brought up to date.
+
+
+ALSO LEFT
+---------
+[ ] Run the browser tests (tests/test_browser.py, Playwright + Chromium) on the PC once — they can't run in
+    Claude's workspace, and the upload, review-sheet and per-series-settings changes touched them.
+[ ] One full test run in ~20 failed once and never again (most likely an older timing-sensitive test:
+    restart / starting / trash / windows locks). Find it with repeated runs and make it deterministic.
+
+
+IDEAS — discussed, not decided
+------------------------------
+[ ] Names like "(同人誌) [Circle (Artist)] Title (Original)": first ( ) = type when it's a known type word
+    (同人誌 / 同人志 / 동인지 → Doujinshi, 成年コミック / 一般コミック / 漫画 → Manga, 同人CG集 → Artist CG,
+    画集 → Artbook — a small built-in table, no translation library), otherwise an event as today; last ( ) =
+    parody / original, stored as metadata (オリジナル → Original; other series names kept as written).
+    Would join the baseline in docs/NAMING.md, with tests.
