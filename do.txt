@@ -13,7 +13,7 @@ PART 1 — FINISH THE SPLIT  (pure restructuring: nothing visible changes)
        ⋯ menu, Optimize, review sheet) — same results, no errors.
        DONE 2026-11-21: CLICKS table in 06-events.js (49 rows, first match wins), 43 handlers in their area files;
        35 real clicks old vs new → identical page state, no errors.
-[ ] 2. The Library class (~2,300 lines of library.py) → one class built from parts, one file per area:
+[x] 2. The Library class (~2,300 lines of library.py) → one class built from parts, one file per area:
          scanning      scan, watch loop, index, discovery of libraries / collections / empty series
          files         moves, renames, merges, collections, upload targets, Windows-lock retries
          trash         marking, the delayed mover, emptying
@@ -21,6 +21,9 @@ PART 1 — FINISH THE SPLIT  (pure restructuring: nothing visible changes)
          media         thumbnails, covers, panels, JPEG XL / HEIC transcoding, cache sweep
        Same public methods and attributes; checked like the library.py split (every method's syntax tree
        identical, all tests green).
+       DONE 2026-11-21: library.py 2,686 → ~720 lines; libscan / libfiles / libtrash / libedits / libmedia.py.
+       139 / 139 methods and class attributes identical (the only change: LIB_ROOT, CONFIG_DIR and
+       EMPTY_FOLDER_AFTER read from library.py at call time, so tests can still swap them); live-server check.
 
 
 PART 2 — ONE BACKGROUND JOB SYSTEM WITH LIVE PROGRESS
