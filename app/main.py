@@ -38,7 +38,12 @@ log = logging.getLogger("cfreader")
 lib = Library()
 from .optimize import Optimizer  # noqa: E402
 from .uploadlog import UploadLog, damage_detail  # noqa: E402
+from .jobs import Jobs  # noqa: E402
+from .events import Hub  # noqa: E402
 opt = Optimizer(lib)
+jobs = Jobs(lib.db)                    # every background job (docs/JOBS.md)
+hub = Hub(jobs.visible)                # the live stream: GET /api/events
+jobs.listeners.append(hub.publish)
 accounts = Accounts(CONFIG_DIR)
 uplog = UploadLog(CONFIG_DIR / "logs")
 favs = Store(Db.at(CONFIG_DIR / "reader.db"), "favorites", CONFIG_DIR / "favorites.json")      # {account id: [list, …]} — references only, never files
@@ -77,7 +82,20 @@ async def lifespan(_app):
     threading.Thread(target=lib.watch_loop, name="scanner", daemon=True).start()
     threading.Thread(target=lib.prep_loop, name="prepare", daemon=True).start()
     threading.Thread(target=opt.loop, name="optimize", daemon=True).start()
+    jobs.start_workers()
+    threading.Thread(target=_watch_rev, name="events", daemon=True).start()
     yield
+    jobs.stop()
+
+
+def _watch_rev():
+    """Tell every open tab when the library changed (a scan found something, an edit was saved)."""
+    last = lib.rev
+    while True:
+        time.sleep(0.5)
+        if lib.rev != last:
+            last = lib.rev
+            hub.publish({"type": "library", "rev": last})
 
 
 app = FastAPI(title="Cute&Funny Reader", version=__version__, lifespan=lifespan)
@@ -1119,7 +1137,8 @@ def optimize_originals_clear():
 
 @app.get("/api/jobs")
 def jobs_list():
-    return {"jobs": opt.list(me()["id"])}
+    """Every job you can see: ✨ Optimize runs (until they move onto the job system) and the rest."""
+    return {"jobs": [{**j, "kind": "optimize"} for j in opt.list(me()["id"])] + jobs.list(me())}
 
 
 @app.post("/api/jobs/{jid}/{action}")
@@ -1127,10 +1146,26 @@ def jobs_control(jid: str, action: str):
     if action not in ("pause", "resume", "cancel", "dismiss", "now"):
         raise HTTPException(400, "Unknown action")
     try:
-        opt.control(me()["id"], jid, action)
+        if jid in jobs.mem:
+            if action == "now":
+                raise HTTPException(400, "Unknown action")
+            jobs.control(jid, action, me())
+        else:
+            opt.control(me()["id"], jid, action)
     except KeyError:
         raise HTTPException(404, "job not found")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
     return {"ok": True}
+
+
+@app.get("/api/events")
+async def events(request: Request):
+    """The live stream (Server-Sent Events): job progress and "the library changed", one connection per tab."""
+    user = me()
+    hello = {"type": "hello", "rev": lib.rev, "jobs": jobs.list(user)}
+    return StreamingResponse(hub.stream(user, hello, request.is_disconnected), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/books/{bid}/transcode")
