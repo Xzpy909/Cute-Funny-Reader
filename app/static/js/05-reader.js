@@ -481,3 +481,13 @@ function wake() {
 }
 function toggleUI() { if (reader.classList.toggle('idle')) clearTimeout(idleT); else wake(); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1600); }
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickGo(g) { return R.guided ? goTo(+g.dataset.go, { panel: 0 }) : goTo(+g.dataset.go); }
+function clickTocChapter(ch) { $('#toc').classList.remove('open'); return loadChapter(+ch.dataset.ch); }
+function clickChapterGo(cg) { return loadChapter(+cg.dataset.chgo); }
+function clickProseLink(link, e) { e.preventDefault(); if (link.dataset.ch != null) loadChapter(+link.dataset.ch, { anchor: link.dataset.anchor }); else if (link.dataset.anchor) $('#prose').querySelector(`[id="${CSS.escape(link.dataset.anchor)}"]`)?.scrollIntoView({ behavior: 'smooth' }); }
+function clickProseImage(pimg) { $('#lightbox img').src = pimg.src; $('#lightbox').classList.add('open'); }
+function clickEndNext(en) { closeOverlays(); return openBook(en.dataset.endnext, 0); }
+function clickEndBack() { closeOverlays(); return closeReader(); }
+function clickEndHome() { closeOverlays(); location.hash = '#/'; }

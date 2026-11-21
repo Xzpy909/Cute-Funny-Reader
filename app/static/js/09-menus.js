@@ -519,3 +519,17 @@ function openPrompt(anchor, o) {
     try { await o.run(v); closeMenu(); } catch (err) { m.classList.remove('busy'); $('#mPromptErr').textContent = err.message; }
   });
 }
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickMore(mo, e) { e.preventDefault(); e.stopPropagation(); return openMenu(mo.dataset.more, mo); }
+function clickNewCol(nc) { return newCollection(nc, nc.dataset.newcol); }
+function clickSerSettings(ss) { return openSeriesModal(S.seriesById[ss.dataset.sersettings]); }
+function clickNewSeries(ns) { return openSeriesModal(null, ns.dataset.newseries); }
+function clickTrashed(gone, e) { e.preventDefault(); return openMenu(itemKey(gone), gone, isPhone() ? null : e); }
+function clickFavsNav() { location.hash = '#/favs'; }
+function clickFavList(fl) { location.hash = `#/fav/${fl.dataset.favlist}`; }
+function clickFavBack() { location.hash = '#/favs'; }
+function clickNewFav(nf) {
+  return openPrompt(nf, { title: 'New favourites list', hint: 'Add series, sets or variants to it from their ⋯ menu.', placeholder: 'List name', button: 'Create',
+    run: async name => { const f = await jsonFetch('POST', '/api/favorites', { name }); await refreshFavs(); location.hash = `#/fav/${f.id}`; } });
+}

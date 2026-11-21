@@ -302,3 +302,33 @@ function hitCard(b, k) {
     <div class="cm">in ${esc(s?.name || b.series)}</div>
   </button>`;
 }
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickTagPop(tpb, e) { e.preventDefault(); e.stopPropagation(); return openTagPop(tpb); }
+function clickTag(tg, e) {
+  closeTagPop(); e.preventDefault(); e.stopPropagation(); S.q = tg.dataset.tag; $('#q').value = S.q; S.filter = 'all';
+  const h = S.lib ? `#/library/${S.lib}` : '#/'; if (location.hash === h) { renderHome(); renderSidebar(); } else location.hash = h;
+}
+function clickCollection(cc) {
+  if (!S.sel) { location.hash = `#/collection/${cc.dataset.collection}`; return; }
+  return appToast(`${cap(pl(Vhome().g))} can’t be selected — open one to select its ${pl(Vhome().s)}`);
+}
+function clickSelAll() {
+  const pool = selPool();
+  S.sel = pool.every(id => S.sel.has(id)) ? new Set() : new Set(pool);
+  return S.selMode === 'series' ? (renderHome(), renderSelbar()) : renderSeries(S.curSeries);
+}
+function clickSelAct(sa) {
+  if (!S.sel?.size) return;
+  if (sa.dataset.selact === 'read') {
+    const books = selBooks(), done = !books.every(isDone);
+    books.forEach(b => setDone(b, done));
+    appToast(`Marked ${plural(books.length, 'item')} as ${done ? 'read' : 'unread'}`); S.sel = new Set(); renderSidebar();
+    return S.selMode === 'series' ? (renderHome(), renderSelbar()) : renderSeries(S.curSeries);
+  }
+  if (S.selMode === 'series') return openSeriesBatchMenu([...S.sel], sa, sa.dataset.selact);
+  return openBooksMenu([...S.sel], sa, sa.dataset.selact);
+}
+function clickSelectSeries(sc, e) { e.preventDefault(); const id = sc.dataset.series; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); sc.classList.toggle('sel', S.sel.has(id)); sc._h = null; return renderSelbar(); }
+function clickOpen(o) { return openBook(o.dataset.open, o.dataset.start != null ? +o.dataset.start : null); }
+function clickSeries(se) { if (se.dataset.single) return openBook(se.dataset.single); location.hash = `#/series/${se.dataset.series}`; }

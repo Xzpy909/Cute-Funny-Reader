@@ -5,115 +5,69 @@
 /* ======================= EVENTS ======================= */
 $$('[data-ico]').forEach(el => el.insertAdjacentHTML('afterbegin', ico(el.dataset.ico)));
 
+// Clicks anywhere on the page: one listener, one table. Each row is [selector, handler(el, e, t), when(el, t)?]:
+// rows are tried top to bottom, `el` is the clicked element's closest match, and the first row that matches
+// (and whose `when` agrees) handles the click. ORDER MATTERS: tag chips and ⋯ buttons sit inside cards, so they
+// come before the cards; selection mode comes before opening. The handlers live with their area:
+// 02-state (sidebar), 03-home, 04-series, 05-reader, 07-libraries, 08-uploads, 09-menus, 11-optimize.
+let CLICKS;
+const clickTable = () => CLICKS ||= [      // built at the first click — every part has loaded by then
+  ['[data-tagpop]', clickTagPop],
+  ['[data-tag]', clickTag],
+  ['[data-more]', clickMore],
+  ['[data-collection]', clickCollection],
+  ['[data-libback]', clickLibBack],
+  ['[data-colback]', clickColBack],
+  ['[data-newcol]', clickNewCol],
+  ['[data-sersettings]', clickSerSettings],
+  ['[data-newseries]', clickNewSeries],
+  ['[data-select]', () => toggleSelect(!S.sel)],
+  ['[data-selclose]', () => toggleSelect(false)],
+  ['[data-selall]', clickSelAll],
+  ['[data-selact]', clickSelAct],
+  ['[data-view]', clickView],
+  ['[data-sortflip]', clickSortFlip],
+  ['#grid [data-series]', clickSelectSeries, () => S.sel && S.selMode === 'series'],                    // selecting:
+  ['.chgrid [data-open], .blist [data-open]', clickSelectBook, () => S.sel && S.selMode === 'books'],  // toggle, don't open
+  ['.card.trashed, .brow.trashed', clickTrashed, () => !S.sel],
+  ['[data-mark]', clickMark],
+  ['[data-markall]', clickMarkAll],
+  ['[data-open]', clickOpen],
+  ['[data-series]', clickSeries],
+  ['[data-home]', clickHome],
+  ['[data-addlib], #btnAddLib', () => openLibModal()],
+  ['[data-editlib]', clickEditLib],
+  ['[data-pick]', clickPick],
+  ['[data-upcancel]', () => cancelUploads()],
+  ['[data-uplist]', clickUpList],
+  ['[data-upmin]', clickUpMin],
+  ['#uploads.min .up-h', clickUpMin, (el, t) => !t.closest('[data-upclose], [data-upcancel]')],
+  ['[data-upclose]', clickUpClose],
+  ['[data-closemodal]', clickCloseLibModal],
+  ['[data-filter]', clickFilter],
+  ['[data-nav]', clickFavsNav, el => el.dataset.nav === 'favs'],
+  ['[data-nav]', clickStorageNav, el => el.dataset.nav === 'storage'],
+  ['[data-favlist]', clickFavList],
+  ['[data-favback]', clickFavBack],
+  ['[data-newfav]', clickNewFav],
+  ['[data-nav]', clickNav],
+  ['[data-lib]', clickLib],
+  ['[data-go]', clickGo],
+  ['#toc [data-ch]', clickTocChapter],
+  ['[data-chgo]', clickChapterGo],
+  ['[data-finish]', () => showEnd()],
+  ['#prose a[href="#"]', clickProseLink],
+  ['#prose img', clickProseImage, el => !el.closest('h1,h2')],
+  ['[data-endnext]', clickEndNext],
+  ['[data-endback]', clickEndBack],
+  ['[data-endhome]', clickEndHome],
+];
 document.addEventListener('click', e => {
   const t = e.target;
-  const tpb = t.closest('[data-tagpop]');
-  if (tpb) { e.preventDefault(); e.stopPropagation(); return openTagPop(tpb); }
-  const tg = t.closest('[data-tag]');
-  if (tg) { closeTagPop(); e.preventDefault(); e.stopPropagation(); S.q = tg.dataset.tag; $('#q').value = S.q; S.filter = 'all';
-    const h = S.lib ? `#/library/${S.lib}` : '#/'; if (location.hash === h) { renderHome(); renderSidebar(); } else location.hash = h; return; }
-  const mo = t.closest('[data-more]');
-  if (mo) { e.preventDefault(); e.stopPropagation(); return openMenu(mo.dataset.more, mo); }
-  const cc = t.closest('[data-collection]');
-  if (cc && !S.sel) { location.hash = `#/collection/${cc.dataset.collection}`; return; }
-  if (cc && S.sel) return appToast(`${cap(pl(Vhome().g))} can’t be selected — open one to select its ${pl(Vhome().s)}`);
-  const lbk = t.closest('[data-libback]');
-  if (lbk) { location.hash = `#/library/${lbk.dataset.libback}`; return; }
-  const cbk = t.closest('[data-colback]');
-  if (cbk) { location.hash = `#/collection/${cbk.dataset.colback}`; return; }
-  const nc = t.closest('[data-newcol]');
-  if (nc) return newCollection(nc, nc.dataset.newcol);
-  const ss = t.closest('[data-sersettings]');
-  if (ss) return openSeriesModal(S.seriesById[ss.dataset.sersettings]);
-  const ns = t.closest('[data-newseries]');
-  if (ns) return openSeriesModal(null, ns.dataset.newseries);
-  if (t.closest('[data-select]')) return toggleSelect(!S.sel);
-  if (t.closest('[data-selclose]')) return toggleSelect(false);
-  if (t.closest('[data-selall]')) {
-    const pool = selPool();
-    S.sel = pool.every(id => S.sel.has(id)) ? new Set() : new Set(pool);
-    return S.selMode === 'series' ? (renderHome(), renderSelbar()) : renderSeries(S.curSeries);
+  for (const [sel, run, when] of clickTable()) {
+    const el = t.closest(sel);
+    if (el && (!when || when(el, t))) return run(el, e, t);
   }
-  const sa = t.closest('[data-selact]');
-  if (sa) {
-    if (!S.sel?.size) return;
-    if (sa.dataset.selact === 'read') {
-      const books = selBooks(), done = !books.every(isDone);
-      books.forEach(b => setDone(b, done));
-      appToast(`Marked ${plural(books.length, 'item')} as ${done ? 'read' : 'unread'}`); S.sel = new Set(); renderSidebar();
-      return S.selMode === 'series' ? (renderHome(), renderSelbar()) : renderSeries(S.curSeries);
-    }
-    if (S.selMode === 'series') return openSeriesBatchMenu([...S.sel], sa, sa.dataset.selact);
-    return openBooksMenu([...S.sel], sa, sa.dataset.selact);
-  }
-  const vw = t.closest('[data-view]');
-  if (vw) { saveSeriesPref(S.curSeries, { view: vw.dataset.view }); return renderSeries(S.curSeries); }
-  if (t.closest('[data-sortflip]')) { const s = S.seriesById[S.curSeries]; saveSeriesPref(s.id, { sort: seriesSort(s) === 'desc' ? 'asc' : 'desc' }); return renderSeries(s.id); }
-  if (S.sel) {
-    const sc = S.selMode === 'series' && t.closest('#grid [data-series]');
-    if (sc) { e.preventDefault(); const id = sc.dataset.series; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); sc.classList.toggle('sel', S.sel.has(id)); sc._h = null; return renderSelbar(); }
-    const so = S.selMode === 'books' && t.closest('.chgrid [data-open], .blist [data-open]');
-    if (so) { e.preventDefault(); const id = so.dataset.open; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); so.classList.toggle('sel', S.sel.has(id)); return renderSelbar(); }
-  }
-  const gone = !S.sel && t.closest('.card.trashed, .brow.trashed');
-  if (gone) { e.preventDefault(); return openMenu(itemKey(gone), gone, isPhone() ? null : e); }
-  const mark = t.closest('[data-mark]');
-  if (mark) { const b = S.books[mark.dataset.mark]; setDone(b, !isDone(b)); renderSeries(b.seriesId); renderSidebar(); return; }
-  const all = t.closest('[data-markall]');
-  if (all) { const s = S.seriesById[all.dataset.markall]; const done = seriesInfo(s).unread > 0; s.books.forEach(b => setDone(b, done)); renderSeries(s.id); renderSidebar(); return; }
-  const o = t.closest('[data-open]');
-  if (o) return openBook(o.dataset.open, o.dataset.start != null ? +o.dataset.start : null);
-  const se = t.closest('[data-series]');
-  if (se) { if (se.dataset.single) return openBook(se.dataset.single); location.hash = `#/series/${se.dataset.series}`; return; }
-  if (t.closest('[data-home]')) { location.hash = S.lib ? `#/library/${S.lib}` : '#/'; return; }
-  if (t.closest('[data-addlib], #btnAddLib')) return openLibModal();
-  const el = t.closest('[data-editlib]');
-  if (el) return openLibModal(S.libById[el.dataset.editlib]);
-  const pk = t.closest('[data-pick]');
-  if (pk) { UP.pickTarget = pk.dataset.pick; UP.pickSeries = pk.dataset.pickseries || null; UP.pickCol = pk.dataset.pickcol || null; $('#filePick').click(); return; }
-  if (t.closest('[data-upcancel]')) return cancelUploads();
-  const ul = t.closest('[data-uplist]');
-  if (ul) {                                          // the files whose path was too long: paths inside the dropped folder
-    const text = (UP.longPaths || []).join('\r\n') + '\r\n';
-    if (ul.dataset.uplist === 'copy') return navigator.clipboard.writeText(text).then(() => appToast('List copied — paste it anywhere (e.g. Notepad)'), () => appToast('Couldn’t copy — try Save list'));
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-    a.download = 'files-with-too-long-paths.txt'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    return;
-  }
-  if (t.closest('[data-upmin]') || (t.closest('#uploads.min .up-h') && !t.closest('[data-upclose], [data-upcancel]'))) {
-    UP.min = !UP.min; local.set('cf-upmin', UP.min); UP.listAt = 0; renderUploads(); return;
-  }
-  if (t.closest('[data-upclose]')) { if (!UP.rows.some(r => r.state === 'queued' || r.state === 'up')) { UP.rows = []; UP.longPaths = []; } $('#uploads').classList.remove('on'); return; }
-  if (t.closest('[data-closemodal]')) { $('#libModal').classList.remove('open'); return; }
-  const f = t.closest('[data-filter]');
-  if (f) { S.filter = f.dataset.filter; renderHome(); renderSidebar(); return; }
-  const nav = t.closest('[data-nav]');
-  if (nav?.dataset.nav === 'favs') { location.hash = '#/favs'; return; }
-  if (nav?.dataset.nav === 'storage') { location.hash = '#/storage'; return; }
-  const fl = t.closest('[data-favlist]');
-  if (fl) { location.hash = `#/fav/${fl.dataset.favlist}`; return; }
-  if (t.closest('[data-favback]')) { location.hash = '#/favs'; return; }
-  const nf = t.closest('[data-newfav]');
-  if (nf) return openPrompt(nf, { title: 'New favourites list', hint: 'Add series, sets or variants to it from their ⋯ menu.', placeholder: 'List name', button: 'Create',
-    run: async name => { const f = await jsonFetch('POST', '/api/favorites', { name }); await refreshFavs(); location.hash = `#/fav/${f.id}`; } });
-  if (nav) { S.lib = null; S.filter = nav.dataset.nav === 'home' ? 'all' : nav.dataset.nav; if (location.hash.length > 2) location.hash = '#/'; else { renderHome(); renderSidebar(); } return; }
-  const lb = t.closest('[data-lib]');
-  if (lb) { S.filter = 'all'; location.hash = location.hash === `#/library/${lb.dataset.lib}` ? '#/' : `#/library/${lb.dataset.lib}`; return; }
-  const g = t.closest('[data-go]');
-  if (g) return R.guided ? goTo(+g.dataset.go, { panel: 0 }) : goTo(+g.dataset.go);
-  const ch = t.closest('#toc [data-ch]');
-  if (ch) { $('#toc').classList.remove('open'); return loadChapter(+ch.dataset.ch); }
-  const cg = t.closest('[data-chgo]');
-  if (cg) return loadChapter(+cg.dataset.chgo);
-  if (t.closest('[data-finish]')) return showEnd();
-  const link = t.closest('#prose a[href="#"]');
-  if (link) { e.preventDefault(); if (link.dataset.ch != null) loadChapter(+link.dataset.ch, { anchor: link.dataset.anchor }); else if (link.dataset.anchor) $('#prose').querySelector(`[id="${CSS.escape(link.dataset.anchor)}"]`)?.scrollIntoView({ behavior: 'smooth' }); return; }
-  const pimg = t.closest('#prose img');
-  if (pimg && !pimg.closest('h1,h2')) { $('#lightbox img').src = pimg.src; $('#lightbox').classList.add('open'); return; }
-  const en = t.closest('[data-endnext]');
-  if (en) { closeOverlays(); return openBook(en.dataset.endnext, 0); }
-  if (t.closest('[data-endback]')) { closeOverlays(); return closeReader(); }
-  if (t.closest('[data-endhome]')) { closeOverlays(); location.hash = '#/'; }
 });
 document.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.brow')) { e.preventDefault(); e.target.click(); }

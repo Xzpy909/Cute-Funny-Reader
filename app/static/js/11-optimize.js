@@ -452,3 +452,6 @@ async function storageChange(e) {
   } catch (err) { appToast(err.message); }
   renderStorage(); pollJobs();
 }
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickStorageNav() { location.hash = '#/storage'; }

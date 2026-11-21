@@ -254,3 +254,12 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 const openBook = (id, start) => { location.hash = `#/read/${id}${start != null ? '/' + start : ''}`; };
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickLibBack(lbk) { location.hash = `#/library/${lbk.dataset.libback}`; }
+function clickColBack(cbk) { location.hash = `#/collection/${cbk.dataset.colback}`; }
+function clickView(vw) { saveSeriesPref(S.curSeries, { view: vw.dataset.view }); return renderSeries(S.curSeries); }
+function clickSortFlip() { const s = S.seriesById[S.curSeries]; saveSeriesPref(s.id, { sort: seriesSort(s) === 'desc' ? 'asc' : 'desc' }); return renderSeries(s.id); }
+function clickSelectBook(so, e) { e.preventDefault(); const id = so.dataset.open; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); so.classList.toggle('sel', S.sel.has(id)); return renderSelbar(); }
+function clickMark(mark) { const b = S.books[mark.dataset.mark]; setDone(b, !isDone(b)); renderSeries(b.seriesId); renderSidebar(); }
+function clickMarkAll(all) { const s = S.seriesById[all.dataset.markall]; const done = seriesInfo(s).unread > 0; s.books.forEach(b => setDone(b, done)); renderSeries(s.id); renderSidebar(); }

@@ -383,3 +383,14 @@ function renderUploads(show) {
       + (rows.length > shown.length ? `<div class="up-more">+ ${plural(rows.length - shown.length, 'more file')}</div>` : '');
   });
 }
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickPick(pk) { UP.pickTarget = pk.dataset.pick; UP.pickSeries = pk.dataset.pickseries || null; UP.pickCol = pk.dataset.pickcol || null; $('#filePick').click(); }
+function clickUpList(ul) {                         // the files whose path was too long: paths inside the dropped folder
+  const text = (UP.longPaths || []).join('\r\n') + '\r\n';
+  if (ul.dataset.uplist === 'copy') return navigator.clipboard.writeText(text).then(() => appToast('List copied — paste it anywhere (e.g. Notepad)'), () => appToast('Couldn’t copy — try Save list'));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = 'files-with-too-long-paths.txt'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function clickUpMin() { UP.min = !UP.min; local.set('cf-upmin', UP.min); UP.listAt = 0; renderUploads(); }
+function clickUpClose() { if (!UP.rows.some(r => r.state === 'queued' || r.state === 'up')) { UP.rows = []; UP.longPaths = []; } $('#uploads').classList.remove('on'); }
