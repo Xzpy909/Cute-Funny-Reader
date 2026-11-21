@@ -47,7 +47,7 @@ Was: Delete greyed the card out in the library for 10 minutes, then the file mov
 
 PART 3 — ONE BACKGROUND JOB SYSTEM WITH LIVE PROGRESS
 ------------------------------------------------------
-Today four kinds of background work each do it their own way: ✨ Optimize has its own queue + Jobs panel,
+Was (before Part 3): four kinds of background work each do it their own way: ✨ Optimize has its own queue + Jobs panel,
 scans run in a loop the page polls every 8 s, JPEG XL / HEIC conversion starts a thread per book and is polled
 on its own, and big deletes / moves / renames are one long request — the "working…" pill only counts seconds.
 
@@ -72,15 +72,19 @@ on its own, and big deletes / moves / renames are one long request — the "work
        "Scanning · 1,200 of 3,400 files"; the per-book transcode polling goes.
        DONE 2026-11-21 (server side): jobs.track() — shows only after 1 s, memory only; scans (files, per
        library), the trash mover (files), conversions (pages, owned by who opened it). The polling goes in step 8.
-[ ] 8. Frontend: one jobs store fed by /api/events; the working pill and the Jobs panel both read it. If the
+[x] 8. Frontend: one jobs store fed by /api/events; the working pill and the Jobs panel both read it. If the
        stream can't connect (some proxies), it falls back to polling. Remove the old polling loops.
-[ ] 9. README: the Jobs panel / pill section brought up to date.
+[x] 9. README: the Jobs panel / pill section brought up to date.
+       DONE 2026-11-21 (8 + 9): js/13-live.js — one store fed by /api/events, polling only as the fallback;
+       the pill follows 202 jobs and shows background work; the Jobs panel refreshes on Optimize events; the reader
+       follows conversions by event; the 8 s status poll is now a once-a-minute safety net. Open streams end on
+       Ctrl+C / docker stop (a stream would otherwise hold the shutdown). README section "Background work".
 
 
 ALSO LEFT
 ---------
-[ ] Run the browser tests (tests/test_browser.py, Playwright + Chromium) on the PC once — they can't run in
-    Claude's workspace, and the upload, review-sheet and per-series-settings changes touched them.
+[ ] Browser tests (tests/test_browser.py) run in Claude's workspace now. Two failed already before Part 3 and
+    still do: "cosplay photo folders are packed as zip" and "uploaded folder uses its metadata" — look into them.
 [ ] One full test run in ~20 failed once and never again (most likely an older timing-sensitive test:
     restart / starting / trash / windows locks). Find it with repeated runs and make it deterministic.
 

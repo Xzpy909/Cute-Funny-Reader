@@ -255,7 +255,7 @@ class MediaMixin:
             kind = "HEIC" if any(n.lower().endswith(HEIC_EXT) for n in b["entries"]) else "JPEG XL"
             try:
                 with self.track("transcode", f"Converting {b['series']} · {b['label']} ({kind})", owner, "pages",
-                                len(todo), after=0) as tracker, \
+                                len(todo), after=0, ref=b["id"]) as tracker, \
                         ThreadPoolExecutor(max_workers=max(1, min(4, (os.cpu_count() or 2) - 1))) as ex:
                     for _ in ex.map(lambda i: self.transcoded_page(b, i), todo):
                         tracker.progress(n=1)

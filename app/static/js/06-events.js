@@ -275,4 +275,9 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keyup', e => { if (e.key === 'Shift') { loupeOn = false; loupe.style.display = 'none'; } });
 window.addEventListener('resize', () => { if (document.body.classList.contains('reading') && R.kind === 'images') applyTransform(); });
-setInterval(() => { if (!document.hidden && !document.body.classList.contains('reading') && !S.sel && !$('.overlay.open, #menu.on')) refreshStatus(); }, 8000);
+// changes arrive on the live stream (js/13-live.js); this is the safety net — every 8 s only when the stream is down
+let statusTicks = 0;
+setInterval(() => {
+  if (document.hidden || document.body.classList.contains('reading') || S.sel || $('.overlay.open, #menu.on')) return;
+  if (!LIVE.ok || LIVE.stale || ++statusTicks % 8 === 0) { LIVE.stale = false; refreshStatus(); }
+}, 8000);

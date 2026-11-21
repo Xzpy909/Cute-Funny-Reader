@@ -65,8 +65,11 @@ async function jxlGate(b, token) {
   try { st = await (await fetch(`/api/books/${b.id}/transcode`, { method: 'POST' })).json(); } catch { st = null; }
   while (st && st.state === 'running' && token === R.token) {
     paint(st);
-    await new Promise(r => setTimeout(r, 400));
-    try { st = await api.get(`/api/books/${b.id}/transcode`); } catch { st = null; }
+    // the conversion reports as a job (kind "transcode", ref = this book) on the live stream; asking the server
+    // directly is only the fallback (stream down, or a quiet moment)
+    const j = await liveNext(x => x.kind === 'transcode' && x.ref === b.id, LIVE.ok ? 4000 : 400);
+    if (j && j.state === 'running') st = { ...st, done: j.done, total: j.total || st.total };
+    else try { st = await api.get(`/api/books/${b.id}/transcode`); } catch { st = null; }
   }
   if (token !== R.token) return false;               // the reader was closed / another book opened meanwhile
   if (!st || st.state === 'error') {

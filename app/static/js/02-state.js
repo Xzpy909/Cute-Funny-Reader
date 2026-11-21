@@ -315,7 +315,7 @@ async function load() {
     S.collections = lib.collections || []; S.colById = Object.fromEntries(S.collections.map(c => [c.id, c]));
     if (S.col && !S.colById[S.col]) S.col = null;
     S.progress = progress; S.status = status; S.loaded = true; checkBuild(status);
-    if (first) pollJobs();
+    if (first) liveStart();                       // background jobs and "library changed", live (js/13-live.js)
     buildSeries();
     renderSidebar();
     route();

@@ -148,7 +148,10 @@ def test_lanes_keep_your_actions_moving(tmp_path):
     J.start_workers()
     try:
         o = J.submit("optimize", "u1", "Optimize", {})["id"]
-        m = J.submit("move", "u1", "Move", {"n": 2})["id"]
+        end = time.time() + 5
+        while J.get(o)["state"] != "running" and time.time() < end:   # the optimize lane is busy…
+            time.sleep(0.01)
+        m = J.submit("move", "u1", "Move", {"n": 2})["id"]                 # …and a move still goes through
         assert J.wait(m, 5)["state"] == "done"
         assert J.get(o)["state"] == "running"
         release.set()
@@ -242,3 +245,22 @@ def test_api_lists_and_controls(tmp_path, monkeypatch):
     assert c.post(f"/api/jobs/{jid}/dismiss").json() == {"ok": True}
     assert c.get("/api/jobs").json()["jobs"] == []
     assert c.post("/api/jobs/nope/cancel").status_code == 404
+
+
+def test_closing_ends_every_stream():
+    """`docker stop` must not wait for open tabs: closing the hub ends their streams."""
+    hub = Hub()
+
+    async def go():
+        async def never():
+            return False
+        gen = hub.stream({"id": "u1"}, {"type": "hello"}, never)
+        await gen.__anext__(); await gen.__anext__()
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, hub.close)
+        try:
+            await asyncio.wait_for(gen.__anext__(), 2)
+        except StopAsyncIteration:
+            return True
+        return False
+    assert asyncio.run(go()) and hub.count == 0

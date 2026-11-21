@@ -19,6 +19,7 @@ class Hub:
         self.visible = visible
         self._subs: set = set()
         self._lock = threading.Lock()
+        self.closed = False
 
     def publish(self, event: dict):
         """From any thread."""
@@ -30,6 +31,17 @@ class Hub:
                     sub.loop.call_soon_threadsafe(_put, sub.q, event)
                 except RuntimeError:          # that tab's loop is gone
                     self._drop(sub)
+
+    def close(self):
+        """The server is stopping: end every stream (an open stream would hold up a graceful shutdown)."""
+        self.closed = True
+        with self._lock:
+            subs = list(self._subs)
+        for sub in subs:
+            try:
+                sub.loop.call_soon_threadsafe(_put, sub.q, None)
+            except RuntimeError:
+                pass
 
     def _drop(self, sub):
         with self._lock:
@@ -48,7 +60,7 @@ class Hub:
         try:
             yield "retry: 3000\n\n"
             yield sse(hello)
-            while True:
+            while not self.closed:
                 try:
                     ev = await asyncio.wait_for(q.get(), PING)
                 except asyncio.TimeoutError:
@@ -56,6 +68,8 @@ class Hub:
                         break
                     yield ": ping\n\n"
                     continue
+                if ev is None:                    # closing
+                    break
                 yield sse(ev)
         finally:
             self._drop(sub)

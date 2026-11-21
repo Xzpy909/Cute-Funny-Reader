@@ -163,11 +163,11 @@ async function optClick(e) {
 }
 
 /* ---- the Jobs panel (bottom right, above the uploads panel) ---- */
-async function pollJobs() {
-  clearTimeout(OPT.pollT);
+// refreshed when an Optimize job changes (the live stream, js/13-live.js) or after a button here
+async function pollJobs(d) {
   if (!S.me) return;
-  let d; try { d = await api.get('/api/jobs'); } catch { OPT.pollT = setTimeout(pollJobs, 5000); return; }
-  d.jobs = d.jobs.filter(j => j.kind === 'optimize');               // (the other kinds: the working pill)
+  if (!d) { try { d = await api.get('/api/jobs'); } catch { return; } }
+  d = { jobs: d.jobs.filter(j => j.kind === 'optimize') };         // (the other kinds: the working pill)
   OPT.jobs = d.jobs;
   let changed = false;                                             // a book finished: refresh the library (AVIF pills)
   for (const j of d.jobs) {
@@ -178,9 +178,6 @@ async function pollJobs() {
   if (changed) load();
   renderJobs();
   if (changed && S.inStorage) renderStorage();
-  if (d.jobs.some(j => (j.state === 'queued' || j.state === 'running') && !j.waiting)) OPT.pollT = setTimeout(pollJobs, 1500);
-  else if (d.jobs.some(j => j.waiting)) OPT.pollT = setTimeout(pollJobs, 30000);
-  else if (S.libraries.some(l => l.autoOptimize)) OPT.pollT = setTimeout(pollJobs, 15000);   // new uploads start jobs by themselves
 }
 function jobLine(j) {
   const n = j.books.length, fin = j.done.length + j.skipped.length + j.failed.length;

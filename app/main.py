@@ -85,8 +85,30 @@ async def lifespan(_app):
     threading.Thread(target=opt.loop, name="optimize", daemon=True).start()
     jobs.start_workers()
     threading.Thread(target=_watch_rev, name="events", daemon=True).start()
+    _close_streams_on_exit()
     yield
+    hub.close()
     jobs.stop()
+
+
+def _close_streams_on_exit():
+    """Ctrl+C / `docker stop`: end the open event streams first — the server waits for open requests before it
+    stops, and a stream never ends by itself."""
+    import signal
+
+    def chain(sig):
+        prev = signal.getsignal(sig)
+
+        def handler(s, frame):
+            hub.close()
+            if callable(prev):
+                prev(s, frame)
+        signal.signal(sig, handler)
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            chain(sig)
+    except ValueError:                             # (not the main thread: e.g. tests)
+        pass
 
 
 def _watch_rev():
