@@ -167,6 +167,7 @@ async function pollJobs() {
   clearTimeout(OPT.pollT);
   if (!S.me) return;
   let d; try { d = await api.get('/api/jobs'); } catch { OPT.pollT = setTimeout(pollJobs, 5000); return; }
+  d.jobs = d.jobs.filter(j => j.kind === 'optimize');               // (the other kinds: the working pill)
   OPT.jobs = d.jobs;
   let changed = false;                                             // a book finished: refresh the library (AVIF pills)
   for (const j of d.jobs) {

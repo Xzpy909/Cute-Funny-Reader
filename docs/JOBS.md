@@ -78,6 +78,13 @@ answers exactly as before. A longer one answers `202 {"job": …}`; the page's f
 progress and a Cancel button in the working pill — and then hands the caller the usual answer. Progress is
 counted deep inside the library code: `jobs.step(label)` after each file moved (outside a job it does nothing).
 
+## Work in its own loop: tracked
+
+Scans, the trash mover and JPEG XL / HEIC conversion keep their own loops and report through
+`jobs.track(kind, title, owner, unit, total, after=1.0)`: the job appears only once the work has taken `after`
+seconds (the many quick scans never show), lives in memory only, can't be paused or cancelled, and clears itself
+a minute after it finished.
+
 ## Live updates: one stream
 
 `GET /api/events` — Server-Sent Events. One connection per open tab carries:

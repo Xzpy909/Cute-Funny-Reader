@@ -113,6 +113,10 @@ class ScanMixin:
         self.scanning = True
         t0 = time.time()
         self._ls_memo, self._racy = {}, False
+        # a scan that takes a while shows as a job: "Scanning · 1,200 of 3,400 files" (the total: last scan's count)
+        tracker = self.track("scan", "Checking everything" if deep else "Scanning", unit="files",
+                             total=len(self.books) or None)
+        tracker.__enter__()
         try:
             by_rel = {b["rel"]: b for b in self.books.values()}
             first_run = not by_rel
@@ -142,6 +146,7 @@ class ScanMixin:
                 root_s, base_n = str(root), len(str(_L.LIB_ROOT)) + 1
                 for dirpath, dirnames, filenames, fresh in self._walk(root, deep):
                     dir_list.append(dirpath)
+                    tracker.progress(len(found), label=lib["name"])
                     in_root = dirpath[len(root_s) + 1:].replace(os.sep, "/")       # "" at the library's top
                     cosplay = lib.get("type") == "cosplay"
                     vis = [f for f in filenames if not f.startswith(".")]
@@ -235,9 +240,15 @@ class ScanMixin:
             self.scan_error = str(e)
             log.error("scan failed: %s", e)
             self._dircache.clear()                         # don't trust remembered listings after a failure
+            tracker.__exit__(RuntimeError, RuntimeError(f"Scan failed: {e}"), None)
+            tracker = None
             return None
         finally:
             self.scanning = False
+            if tracker:
+                if tracker.total and tracker.done > tracker.total:
+                    tracker.total = tracker.done
+                tracker.__exit__(None, None, None)
 
     def _settle_names(self, found: dict, col_keys: set, before: dict):
         """Swap each book's natural series / collection key for the permanent id (see store.Names)."""

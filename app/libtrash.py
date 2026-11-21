@@ -125,18 +125,21 @@ class TrashMixin:
         long enough, forget marks and entries whose files are gone. True if files moved (→ rescan)."""
         now = now or time.time()
         moved = False
-        for bid, m in self.trash.all().items():
-            b = self.books.get(bid)
-            if b is None:
-                if not self.scanning and self._scanned:
-                    self.trash.delete(bid)                      # deleted some other way meanwhile
-                continue
-            if now - m["at"] < TRASH_DELAY:
-                continue
-            try:
-                self._to_bin(b, m["at"]); moved = True
-            except OSError as e:
-                log.warning("trash: couldn't move %s (%s) — trying again later", b["rel"], e)
+        due = [(bid, m) for bid, m in self.trash.all().items()
+               if self.books.get(bid) is None or now - m["at"] >= TRASH_DELAY]
+        with self.track("trash", "Moving deleted files to the trash", unit="files",
+                        total=sum(1 for bid, _ in due if self.books.get(bid))) as tracker:
+            for bid, m in due:
+                b = self.books.get(bid)
+                if b is None:
+                    if not self.scanning and self._scanned:
+                        self.trash.delete(bid)                  # deleted some other way meanwhile
+                    continue
+                try:
+                    self._to_bin(b, m["at"]); moved = True
+                except OSError as e:
+                    log.warning("trash: couldn't move %s (%s) — trying again later", b["rel"], e)
+                tracker.progress(n=1, label=b["file"])
         for tid, e in self.bin.all().items():
             d = _L.LIB_ROOT / e["root"] / tid
             if not d.is_dir():

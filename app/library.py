@@ -411,7 +411,8 @@ class Library(FilesMixin, EditsMixin, TrashMixin, ScanMixin, MediaMixin):
         self.edits = Store(self.db, "edits", CONFIG_DIR / "edits.json")      # user edits to metadata, per book id
         self.trash = Store(self.db, "trash")      # book id → {"at"}: marked for the trash, still in its place
         self.bin = Store(self.db, "bin")          # trash id → what was moved into .trash, and where it came from
-        self.settings = Store(self.db, "settings")  # app-wide settings changed in the app (e.g. "trashKeepDays")
+        self.settings = Store(self.db, "settings")
+        self.jobs = None                                 # the job registry (app/jobs.py), set by the server: long work shows there  # app-wide settings changed in the app (e.g. "trashKeepDays")
         self.ids = Identities(self.db)                                        # permanent book ids, whatever the path
         self.groups = Names(self.db)                                          # permanent series / collection ids
         try:
@@ -582,6 +583,11 @@ class Library(FilesMixin, EditsMixin, TrashMixin, ScanMixin, MediaMixin):
             self._save_libs()
         log.info("removed %d librar(y/ies) whose folder no longer exists: %s", len(gone), ", ".join(l["name"] for l in gone))
         return len(gone)
+
+    def track(self, kind: str, title: str, owner: str | None = None, unit: str = "items", total=None, after: float = 1.0):
+        """Long work reported as a job (a scan, the trash mover, a conversion) — see jobs.Tracker."""
+        from .jobs import Tracker
+        return self.jobs.track(kind, title, owner, unit, total, after) if self.jobs else Tracker(None, kind, title, owner, unit, total, after)
 
     def get_library(self, lid: str) -> dict | None:
         return next((l for l in self.libraries if l["id"] == lid), None)
