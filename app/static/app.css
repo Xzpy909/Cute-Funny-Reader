@@ -4399,9 +4399,15 @@ body.authing .reader {
   font: inherit;
 }
 .cvgrid {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  /* each row as tall as its tiles: a tile clips its picture (overflow: hidden), which let rows shrink to fit the
+     dialog — the tiles then piled on top of each other */
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: 12px;
   padding: 4px 4px 8px;
 }
@@ -4464,7 +4470,17 @@ body.authing .reader {
   opacity: 0.45;
 }
 .cvtile.vid span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   font-size: 26px;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.cvtile.vid:hover {
+  transform: none;
+  border-color: transparent;
 }
 .cvfoot {
   display: flex;
