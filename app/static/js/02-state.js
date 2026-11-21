@@ -363,3 +363,9 @@ function renderServer() {
   $('#btnRescan').disabled = st.scanning;
   $('#btnRescan svg').classList.toggle('spin', !!st.scanning);
 }
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickHome() { location.hash = S.lib ? `#/library/${S.lib}` : '#/'; }
+function clickFilter(f) { S.filter = f.dataset.filter; renderHome(); renderSidebar(); }
+function clickNav(nav) { S.lib = null; S.filter = nav.dataset.nav === 'home' ? 'all' : nav.dataset.nav; if (location.hash.length > 2) location.hash = '#/'; else { renderHome(); renderSidebar(); } }
+function clickLib(lb) { S.filter = 'all'; location.hash = location.hash === `#/library/${lb.dataset.lib}` ? '#/' : `#/library/${lb.dataset.lib}`; }

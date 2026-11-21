@@ -6,11 +6,13 @@ then changes smaller, clearer pieces. Every step ends tested, committed and merg
 
 PART 1 — FINISH THE SPLIT  (pure restructuring: nothing visible changes)
 -----------------------------------------------------------------------
-[ ] 1. The one big click handler (js/06-events.js, ~150 lines, one listener for the whole page)
+[x] 1. The one big click handler (js/06-events.js, ~150 lines, one listener for the whole page)
        → a small dispatch table: each data-attribute (data-open, data-series, data-selact, data-mact …) maps to
        a handler, and each handler lives in the file of its area (cards, selection bar, sidebar, reader, menus).
        Check: the jsdom walkthrough, old vs new side by side (sign-in, home, series page, reader, Edit details,
        ⋯ menu, Optimize, review sheet) — same results, no errors.
+       DONE 2026-11-21: CLICKS table in 06-events.js (49 rows, first match wins), 43 handlers in their area files;
+       35 real clicks old vs new → identical page state, no errors.
 [ ] 2. The Library class (~2,300 lines of library.py) → one class built from parts, one file per area:
          scanning      scan, watch loop, index, discovery of libraries / collections / empty series
          files         moves, renames, merges, collections, upload targets, Windows-lock retries

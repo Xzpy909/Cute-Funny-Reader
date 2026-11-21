@@ -306,3 +306,7 @@ $('#detForm').addEventListener('submit', async e => {
   $('#detModal').classList.remove('open'); appToast('Details saved'); await load();
 });
 document.addEventListener('keydown', e => { if (e.isTrusted && e.key === 'Escape' && $('#detModal.open')) { e.stopImmediatePropagation(); $('#detModal').classList.remove('open'); } }, true);
+
+/* ---------- clicks handled here (the order is in CLICKS, js/06-events.js) ---------- */
+function clickEditLib(el) { return openLibModal(S.libById[el.dataset.editlib]); }
+function clickCloseLibModal() { $('#libModal').classList.remove('open'); }
