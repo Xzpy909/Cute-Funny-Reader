@@ -8,8 +8,9 @@ Safety first — a book is never left half-done:
 The file keeps its name, so the book keeps its id, reading progress, favourites and chosen cover.
 Undo puts the kept original back; kept originals are deleted after OPTIMIZE_KEEP_DAYS.
 
-Jobs live in the database, so a restart continues where it stopped. One worker thread runs them, at low
-priority, converting a couple of pages at a time so reading stays smooth.
+Jobs run on the job system (app/jobs.py, kind "optimize", its own lane): they live in the database, so a restart
+continues where it stopped, and one worker runs them at low priority, a couple of pages at a time, so reading
+stays smooth. `self.jobs` still shows each job in the shape the Jobs panel knows (books / done / skipped …).
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from . import library as L
+from .jobs import Ctx, Jobs
 from .store import Store
 
 log = L.log
@@ -145,20 +147,24 @@ def _verify(data: bytes):
 
 
 class Optimizer:
-    def __init__(self, lib):
+    def __init__(self, lib, jobs: Jobs | None = None):
         self.lib = lib
-        self.jobs = Store(lib.db, "optimize_jobs")         # job id → job
+        self.reg = jobs or Jobs(lib.db)                    # the job system (the server passes its one registry)
+        self.reg.kind("optimize", self._run, lane="optimize", resumable=True, low=True,
+                      ready=lambda j: bool(j["params"].get("now")) or self.allowed())
+        self.jobs = _JobView(self.reg)                     # job id → job, in the Jobs panel's shape
         self.kept = Store(lib.db, "optimized")             # book id → what was done, and where the original is
         self.seen = Store(lib.db, "optimize_seen")         # book id → looked at by auto-optimize (once is enough)
         self.settings = Store(lib.db, "optimize_settings")  # "schedule" → night-only hours
-        self.cv = threading.Condition()
+        self.wake = threading.Event()
         self.live: dict[str, dict] = {}                    # job id → progress of the book being converted
         self._ratio_cache: dict = {}
         self._last_cleanup = 0.0
-        for jid, j in self.jobs.all().items():             # a restart: whatever was running continues
-            if j.get("state") == "running":
-                j["state"] = "queued"
-                self.jobs.put(jid, j)
+        old = Store(lib.db, "optimize_jobs")               # before the job system: move them over once
+        for jid, j in old.all().items():
+            if jid not in self.reg.mem:
+                self.jobs.adopt({**j, "state": "queued" if j.get("state") == "running" else j.get("state", "queued")})
+            old.delete(jid)
 
     # ---- presets
     @property
@@ -581,16 +587,12 @@ class Optimizer:
         ok = [b for b in books if not self.why_not(b)]
         if not ok:
             raise ValueError("Nothing here can be optimized: " + (self.why_not(books[0]) if books else "nothing selected"))
-        jid = secrets.token_hex(5)
-        job = {"id": jid, "owner": owner, "title": title, "preset": preset["id"], "presetName": preset.get("name"),
-               "settings": {k: v for k, v in preset.items() if k != "builtin"},
-               "keep": bool(keep), "maxEdge": int(max_edge or 0), "books": [b["id"] for b in ok],
-               "done": [], "skipped": [], "failed": [], "state": "queued", "created": time.time(),
-               "before": 0, "after": 0, "pagesTotal": sum(len(b.get("entries") or []) for b in ok), "pagesDone": 0}
-        self.jobs.put(jid, job)
-        with self.cv:
-            self.cv.notify_all()
-        return job
+        pages = sum(len(b.get("entries") or []) for b in ok)
+        params = {"preset": preset["id"], "presetName": preset.get("name"),
+                  "settings": {k: v for k, v in preset.items() if k != "builtin"},
+                  "keep": bool(keep), "maxEdge": int(max_edge or 0), "books": [b["id"] for b in ok], "pagesTotal": pages}
+        j = self.reg.submit("optimize", owner, title, params, total=pages, unit="pages")
+        return self.jobs.get(j["id"])
 
     # ---- night-only: jobs wait outside the chosen hours (unless started with "Run now")
     def schedule(self) -> dict:
@@ -602,8 +604,8 @@ class Optimizer:
             raise ValueError("Pick two different hours between 0 and 23")
         sch = {"on": bool(on), "from": start, "to": end, "tz": str(tz or "")[:60], "offset": int(offset or 0)}
         self.settings.put("schedule", sch)
-        with self.cv:
-            self.cv.notify_all()
+        with self.reg.cv:
+            self.reg.cv.notify_all()
         return sch
 
     def allowed(self, now: float | None = None) -> bool:
@@ -705,62 +707,81 @@ class Optimizer:
             if j["owner"] != owner:
                 continue
             live = self.live.get(j["id"]) or {}
-            out.append({**{k: v for k, v in j.items() if k != "owner"}, "current": live or None,
+            out.append({**{k: v for k, v in j.items() if k != "owner"}, "kind": "optimize", "current": live or None,
+                        "eta": Jobs.eta(self.reg.mem[j["id"]]),
                         "waiting": j["state"] in ("queued", "running") and not live and not j.get("now") and not self.allowed(),
                         "pagesDone": j["pagesDone"] + live.get("done", 0)})
         return out
 
     def control(self, owner: str, jid: str, action: str):
-        j = self.jobs.get(jid)
-        if not j or j["owner"] != owner:
+        j = self.reg.mem.get(jid)
+        if not j or j["kind"] != "optimize" or j["owner"] != owner:
             raise KeyError(jid)
-        if action == "pause" and j["state"] in ("queued", "running"):
-            j["state"] = "paused"
-        elif action == "resume" and j["state"] == "paused":
-            j["state"] = "queued"
-        elif action == "cancel" and j["state"] in ("queued", "running", "paused"):
-            j["state"] = "cancelled"; j["finished"] = time.time()
-        elif action == "now" and j["state"] in ("queued", "running"):
-            j["now"] = True                                # ignore the night-only hours for this job
-        elif action == "dismiss" and j["state"] in ("done", "cancelled"):
-            self.jobs.delete(jid)
+        if action == "now":
+            if j["state"] in ("queued", "running"):
+                with self.reg.cv:
+                    j["params"]["now"] = True              # ignore the night-only hours for this job
+                    self.reg._write(j)
+                    self.reg.cv.notify_all()
             return
-        else:
-            return
-        self.jobs.put(jid, j)
-        with self.cv:
-            self.cv.notify_all()
-
-    def _next(self):
-        jobs = sorted(self.jobs.all().values(), key=lambda j: j["created"])
-        ok = self.allowed()
-        return next((j for j in jobs if j["state"] in ("queued", "running") and (ok or j.get("now"))), None)
+        try:
+            self.reg.control(jid, action, {"id": owner})
+        except ValueError:
+            pass                                           # (not in a state for that: nothing to do)
 
     def step(self) -> bool:
-        """Run one book of the oldest waiting job. False when there's nothing to do."""
-        job = self._next()
-        if not job:
-            return False
-        jid = job["id"]
-        job["state"] = "running"; job.setdefault("started", time.time())
-        self.jobs.put(jid, job)
+        """Run one book of the oldest waiting job, here (tests; the lane's worker runs whole jobs). False when
+        there's nothing to do."""
+        with self.reg.cv:
+            j = self.reg._next("optimize")
+            if not j:
+                return False
+            j["state"] = "running"
+            j["started"] = j["started"] or time.time()
+            self.reg._write(j)
+        more = self._one(Ctx(self.reg, j["id"], j["params"], j["data"]))
+        with self.reg.cv:
+            if j["state"] == "running" and more:
+                j["state"] = "queued"
+            elif j["state"] == "running":
+                j.update(state="done", finished=time.time(), done=j.get("total") or j["done"], label=None)
+            elif j["state"] == "cancelled" and not j.get("finished"):
+                j.update(finished=time.time(), label=None)
+            self.reg._write(j)
+            self.reg.cv.notify_all()
+        self.reg._tell(j, force=True)
+        return True
+
+    def _run(self, ctx: Ctx):
+        """The whole job, on the optimize lane's worker."""
+        while True:
+            ctx.check()
+            if not self._one(ctx):
+                job = self.jobs.get(ctx.id)
+                return f"saved {job['before'] - job['after']} bytes" if job and job["before"] > job["after"] else None
+
+    def _one(self, ctx: Ctx) -> bool:
+        """Convert the next book of this job. False when none is left."""
+        jid = ctx.id
+        job = self.jobs.get(jid)
         left = [i for i in job["books"] if i not in job["done"]
                 and i not in {s["id"] for s in job["skipped"]} and i not in {f["id"] for f in job["failed"]}]
         if not left:
-            job["state"] = "done"; job["finished"] = time.time()
-            self.jobs.put(jid, job)
-            return True
+            return False
         bid = left[0]
         b = self.lib.get(bid)
-        stop = lambda: (self.jobs.get(jid) or {}).get("state") not in ("running",)
+        stop = lambda: self.reg._state(jid) != "running"
         if not b or self.why_not(b):
             job["skipped"].append({"id": bid, "why": "gone" if not b else self.why_not(b)})
             self.jobs.put(jid, job)
             return True
-        self.live[jid] = {"id": bid, "label": f"{b['series']} · {b['label']}", "done": 0, "pages": len(b.get("entries") or [])}
+        label = f"{b['series']} · {b['label']}"
+        self.live[jid] = {"id": bid, "label": label, "done": 0, "pages": len(b.get("entries") or [])}
+        ctx.progress(job["pagesDone"], job["pagesTotal"], "pages", label=label)
 
         def progress(done, total):
             self.live[jid] = {**self.live[jid], "done": done, "pages": total}
+            ctx.progress(job["pagesDone"] + done, None, label=label)
         preset = job.get("settings") or {**DEFAULT_PRESET, "id": job["preset"]}
         try:
             r = self.convert(b, preset, job["keep"], job["maxEdge"], progress, stop)
@@ -779,20 +800,79 @@ class Optimizer:
             self.live.pop(jid, None)
         job["pagesDone"] = sum(len((self.lib.get(i) or {}).get("entries") or []) for i in job["done"])
         self.jobs.put(jid, job)
+        ctx.progress(job["pagesDone"], None)
         return True
 
     def loop(self):
-        _low_priority()
+        """Auto-optimize and the clean-up of kept originals (the jobs themselves run on the job system)."""
         while True:
             try:
                 self.collect_auto()
-                worked = self.step()
                 if time.time() - self._last_cleanup > 3600:
                     self._last_cleanup = time.time()
                     self.cleanup()
             except Exception as e:  # noqa: BLE001
                 log.warning("optimizer: %s", e)
-                worked = False
-            if not worked:
-                with self.cv:                              # (auto-optimize looks for new uploads more often)
-                    self.cv.wait(8 if any(l.get("autoOptimize") for l in self.lib.libraries) else 30)
+            self.wake.wait(8 if any(l.get("autoOptimize") for l in self.lib.libraries) else 30)   # (new uploads: sooner)
+            self.wake.clear()
+
+
+PARAMS = ("preset", "presetName", "settings", "keep", "maxEdge", "books", "pagesTotal", "auto", "now")
+DATA = {"done": list, "skipped": list, "failed": list, "before": int, "after": int, "pagesDone": int}
+TOP = ("id", "owner", "title", "state", "created", "started", "finished")
+
+
+class _JobView:
+    """Optimize jobs as the Jobs panel (and the code above) know them: one flat dict per job. Reads and writes go
+    to the job system: what the job was started with is its `params`, what it has done is its `data`. A put never
+    changes the state — pause / cancel / resume go through the job system."""
+
+    def __init__(self, reg: Jobs):
+        self.reg = reg
+
+    def get(self, jid: str) -> dict | None:
+        with self.reg.lock:
+            j = self.reg.mem.get(jid)
+            if not j or j["kind"] != "optimize":
+                return None
+            out = {k: j.get(k) for k in TOP}
+            out.update(json.loads(json.dumps(j["params"])))
+            data = j.get("data") or {}
+            out.update({k: json.loads(json.dumps(data[k])) if k in data else f() for k, f in DATA.items()})
+            return out
+
+    def all(self) -> dict:
+        with self.reg.lock:
+            ids = [jid for jid, j in self.reg.mem.items() if j["kind"] == "optimize"]
+        return {jid: self.get(jid) for jid in ids}
+
+    def put(self, jid: str, job: dict):
+        with self.reg.cv:
+            j = self.reg.mem.get(jid)
+            if not j:
+                return
+            j["params"] = {k: job[k] for k in PARAMS if k in job}
+            j["data"] = {k: job[k] for k in DATA if k in job}
+            j["title"] = job.get("title", j["title"])
+            j["total"] = job.get("pagesTotal") or j["total"]
+            j["done"] = job.get("pagesDone", j["done"])
+            self.reg._write(j)
+            self.reg.cv.notify_all()
+        self.reg._tell(j, force=True)
+
+    def delete(self, jid: str):
+        with self.reg.lock:
+            self.reg.mem.pop(jid, None)
+            self.reg.store.delete(jid)
+
+    def adopt(self, old: dict):
+        """A job from before the job system."""
+        k = self.reg.kinds["optimize"]
+        j = {"id": old["id"], "kind": "optimize", "owner": old.get("owner"), "system": False, "title": old.get("title") or "Optimize",
+             "state": old["state"], "done": old.get("pagesDone", 0), "total": old.get("pagesTotal"), "unit": "pages",
+             "label": None, "created": old.get("created") or time.time(), "started": old.get("started"),
+             "finished": old.get("finished"), "error": None, "result": None, "canPause": k.pause, "canCancel": k.cancel,
+             "params": {x: old[x] for x in PARAMS if x in old}, "data": {x: old[x] for x in DATA if x in old}}
+        with self.reg.lock:
+            self.reg.mem[j["id"]] = j
+            self.reg._write(j)

@@ -384,3 +384,42 @@ def test_cb7_sets_are_optimized(lib):
     Image.open(io.BytesIO(lib.read(nb, "001.avif"))).load()
     o.undo(b["id"])
     assert lib.get(b["id"])["entries"] == ["001.jpg", "002.jpg"]
+
+
+def test_jobs_from_before_the_job_system_carry_on(lib):
+    """Optimize kept its own queue before app/jobs.py: those jobs move over once and finish there."""
+    from app.store import Store
+    b = _book(lib, {"001.jpg": photo(seed=1), "002.jpg": photo(seed=2)})
+    Store(lib.db, "optimize_jobs").put("old1", {
+        "id": "old1", "owner": "me", "title": "Starfall", "preset": "t", "presetName": "Test", "settings": P,
+        "keep": True, "maxEdge": 0, "books": [b["id"]], "done": [], "skipped": [], "failed": [], "state": "running",
+        "created": time.time() - 60, "before": 0, "after": 0, "pagesTotal": 2, "pagesDone": 0})
+    o = Optimizer(lib)
+    assert Store(lib.db, "optimize_jobs").all() == {}
+    assert o.list("me")[0]["state"] == "queued" and o.reg.get("old1")["kind"] == "optimize"
+    while o.step():
+        pass
+    j = o.list("me")[0]
+    assert j["state"] == "done" and j["done"] == [b["id"]] and j["after"] < j["before"]
+
+
+def test_the_worker_runs_a_whole_job_and_reports_progress(lib):
+    l = lib.create_library("Lib", "Lib", False, "#fff", "comics")
+    for n in ("Starfall 01", "Starfall 02"):
+        make_cbz(L.LIB_ROOT / l["path"] / "Starfall" / f"{n}.cbz", {"001.jpg": photo(seed=len(n)), "002.jpg": photo(seed=3)})
+    lib.scan()
+    o = Optimizer(lib)
+    events = []
+    o.reg.listeners.append(events.append)
+    j = o.start("me", list(lib.books.values()), "x", keep=True, max_edge=0, title="All", preset=P)
+    o.reg.start_workers({"optimize": 1})
+    try:
+        done = o.reg.wait(j["id"], 60)
+    finally:
+        o.reg.stop()
+    assert done["state"] == "done" and done["done"] == done["total"] == 4 and done["unit"] == "pages"
+    assert done["result"].startswith("saved ")
+    states = [e["job"]["state"] for e in events]
+    assert states[0] == "queued" and "running" in states and states[-1] == "done"
+    assert any(e["job"].get("label", "") and "Starfall" in e["job"]["label"] for e in events)
+    assert o.list("me")[0]["done"] and len(o.list("me")[0]["done"]) == 2

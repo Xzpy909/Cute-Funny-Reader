@@ -40,8 +40,8 @@ from .optimize import Optimizer  # noqa: E402
 from .uploadlog import UploadLog, damage_detail  # noqa: E402
 from .jobs import Jobs  # noqa: E402
 from .events import Hub  # noqa: E402
-opt = Optimizer(lib)
 jobs = Jobs(lib.db)                    # every background job (docs/JOBS.md)
+opt = Optimizer(lib, jobs)
 hub = Hub(jobs.visible)                # the live stream: GET /api/events
 jobs.listeners.append(hub.publish)
 accounts = Accounts(CONFIG_DIR)
@@ -1137,8 +1137,8 @@ def optimize_originals_clear():
 
 @app.get("/api/jobs")
 def jobs_list():
-    """Every job you can see: ✨ Optimize runs (until they move onto the job system) and the rest."""
-    return {"jobs": [{**j, "kind": "optimize"} for j in opt.list(me()["id"])] + jobs.list(me())}
+    """Every job you can see (✨ Optimize runs in the shape the Jobs panel knows: books / done / skipped …)."""
+    return {"jobs": opt.list(me()["id"]) + [j for j in jobs.list(me()) if j["kind"] != "optimize"]}
 
 
 @app.post("/api/jobs/{jid}/{action}")
@@ -1146,7 +1146,7 @@ def jobs_control(jid: str, action: str):
     if action not in ("pause", "resume", "cancel", "dismiss", "now"):
         raise HTTPException(400, "Unknown action")
     try:
-        if jid in jobs.mem:
+        if jid in jobs.mem and jobs.mem[jid]["kind"] != "optimize":
             if action == "now":
                 raise HTTPException(400, "Unknown action")
             jobs.control(jid, action, me())

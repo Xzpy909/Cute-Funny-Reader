@@ -61,7 +61,9 @@ on its own, and big deletes / moves / renames are one long request — the "work
        DONE 2026-11-21: app/jobs.py (lanes user ×2 / optimize ×1 / system ×1, resumable kinds, ctx.check /
        progress / save), app/events.py (SSE hub), tests/test_jobs.py (12). Optimize jobs still listed via its own
        queue in /api/jobs (kind "optimize") until step 5.
-[ ] 5. Move ✨ Optimize onto it (it already behaves like a queue) — the Jobs panel keeps working; its tests stay.
+[x] 5. Move ✨ Optimize onto it (it already behaves like a queue) — the Jobs panel keeps working; its tests stay.
+       DONE 2026-11-21: kind "optimize" on its own lane (night-only hours = the kind's `ready`); old queued
+       jobs move over once; the panel still gets its usual shape (books / done / skipped …) plus eta.
 [ ] 6. Big operations become jobs: deleting / moving / merging many series, renaming collections and libraries.
        The request returns at once with a job id; the pill shows real progress ("Moving 12 of 340 · ~40 s left").
 [ ] 7. Scans, the trash mover and JPEG XL / HEIC conversion report as (system) jobs — the pill can say
