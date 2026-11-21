@@ -140,6 +140,10 @@ function openImages(b, d, start) {
   const fit = b.raw ? '' : `&max=${displayMax()}`;    // RAW books: always the lossless original
   R.pages = d.dims.map(([w, h], i) => ({ src: URLS.page(b, i) + (vids.has(i) ? '' : fit), full: URLS.page(b, i),
     thumb: vids.has(i) ? null : URLS.thumb(b, i, 200), w, h, video: vids.has(i) }));
+  // videos get a frame as their thumbnail in the strip (made on the server with ffmpeg; ▶ when it can't)
+  const filmThumb = (p, i) => p.video
+    ? `<div class="vth">▶</div><img class="vframe" src="${URLS.thumb(b, i, 200)}" alt="" loading="lazy" onerror="this.nextElementSibling.remove(); this.remove()"><i class="vplay">▶</i>`
+    : `<img src="${p.thumb}" alt="" loading="lazy">`;
   R.pre = new Map();
   R.panelReq = {}; R.panelData = {};
   const sp = seriesPrefs[b.seriesId] || {};
@@ -152,8 +156,9 @@ function openImages(b, d, start) {
   const p = prog(b);
   R.idx = clamp(start ?? (p && !p.done ? p.page ?? 0 : 0), 0, R.pages.length - 1);
   const ar = p => p.video ? '16/9' : clamp(p.w / p.h, .42, 1.9).toFixed(3);
-  $('#film').innerHTML = R.pages.map((p, i) => `<button data-go="${i}" style="--ar:${ar(p)}">${p.video ? '<div class="vth">▶</div>' : `<img src="${p.thumb}" alt="" loading="lazy">`}<span>${i + 1}</span></button>`).join('');
+  $('#film').innerHTML = R.pages.map((p, i) => `<button data-go="${i}" style="--ar:${ar(p)}">${filmThumb(p, i)}<span>${i + 1}</span></button>`).join('');
   $('#film').dir = R.rtl ? 'rtl' : 'ltr';
+  filmBar();
   render();
   saveProgress();
   if (!local.get('cf-tipped', false)) { local.set('cf-tipped', true); setTimeout(() => toast('Press ? for shortcuts'), 500); }

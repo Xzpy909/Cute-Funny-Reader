@@ -95,8 +95,41 @@ function centreFilm(smooth) {
 $('#btnFilm').onclick = () => {
   const open = $('#bottom').classList.toggle('film-open'); $('#btnFilm').classList.toggle('on', open);
   updateChrome();
-  if (open) { centreFilm(false); requestAnimationFrame(() => centreFilm(false)); setTimeout(() => centreFilm(false), 420); }
+  if (open) { centreFilm(false); requestAnimationFrame(() => centreFilm(false)); setTimeout(() => { centreFilm(false); filmBar(); }, 420); }
 };
+/* the strip's own scrollbar: a glowing, gently pulsing bar (the browser's thin grey one was hard to see).
+   Drag it, or click anywhere along it to jump there. */
+function filmBar() {
+  const film = $('#film'), bar = $('#filmbar'), knob = bar.firstElementChild;
+  const room = film.scrollWidth - film.clientWidth;
+  bar.classList.toggle('none', room <= 1);
+  if (room <= 1) return;
+  const w = Math.max(6, film.clientWidth / film.scrollWidth * 100);
+  let f = Math.abs(film.scrollLeft) / room;                 // (right-to-left strips count from the right)
+  if (film.dir === 'rtl') f = 1 - f;
+  knob.style.width = `${w}%`; knob.style.left = `${f * (100 - w)}%`;
+}
+$('#film').addEventListener('scroll', filmBar, { passive: true });
+window.addEventListener('resize', filmBar);
+{
+  const bar = $('#filmbar');
+  let grab = null;                                          // where on the knob it was taken (0–1)
+  const to = e => {
+    const film = $('#film'), r = bar.getBoundingClientRect(), knob = bar.firstElementChild.getBoundingClientRect();
+    const room = film.scrollWidth - film.clientWidth;
+    let f = clamp((e.clientX - r.left - grab * knob.width) / Math.max(1, r.width - knob.width), 0, 1);
+    if (film.dir === 'rtl') f = f - 1;                      // rtl: 0 at the right, negative to the left
+    film.scrollLeft = f * room;
+  };
+  bar.addEventListener('pointerdown', e => {
+    const k = bar.firstElementChild.getBoundingClientRect();
+    grab = e.clientX >= k.left && e.clientX <= k.right ? (e.clientX - k.left) / k.width : 0.5;
+    bar.setPointerCapture(e.pointerId); bar.classList.add('drag'); to(e); e.preventDefault();
+  });
+  bar.addEventListener('pointermove', e => { if (grab !== null) to(e); });
+  const drop = () => { grab = null; bar.classList.remove('drag'); };
+  bar.addEventListener('pointerup', drop); bar.addEventListener('pointercancel', drop);
+}
 $('#btnPrev').onclick = () => step(R.kind === 'images' && R.rtl ? 1 : -1);
 $('#btnNext').onclick = () => step(R.kind === 'images' && R.rtl ? -1 : 1);
 $$('#bgSeg button').forEach(b => b.onclick = () => { prefs.bg = b.dataset.bg; applyPrefs(); });

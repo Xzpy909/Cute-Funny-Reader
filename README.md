@@ -178,7 +178,7 @@ connection back, the page notices and checks every few seconds instead. (nginx: 
 **Comics & manga**
 - Single, two-page spread (wide pages stay alone) and vertical scroll for webtoons, chosen automatically for tall strips
 - **Guided view (G):** automatic panel detection; arrow keys step panel by panel, right-to-left for manga
-- Zoom (double-click, Ctrl+wheel, Z) with drag-to-pan, a Shift magnifier, a thumbnail strip, and a scrubber with hover preview
+- Zoom (double-click, Ctrl+wheel, Z) with drag-to-pan, a Shift magnifier, a thumbnail strip (videos show a frame from the video; its scrollbar glows so it's easy to grab — drag it or click along it), and a scrubber with hover preview
 - Touch: swipe or tap the edges to turn pages; swipes never bring up the controls; **tap the centre** to show / hide them, **double-tap** to zoom (on a video: play / pause)
 - Swipe and tap zones on touch devices, plus an ambient glow and Ink / Slate / Paper backdrops
 
@@ -233,7 +233,7 @@ connection back, the page notices and checks every few seconds instead. (nginx: 
 | `GET /api/library` | all books + libraries |
 | `GET /api/books/{id}` | details + page dimensions / chapter list |
 | `GET /api/books/{id}/pages/{n}` | original page image |
-| `GET /api/books/{id}/thumbs/{n}?w=200` | WebP thumbnail |
+| `GET /api/books/{id}/thumbs/{n}?w=200` | WebP thumbnail (a video: a frame from it) |
 | `GET /api/books/{id}/cover?w=480` | cover |
 | `GET /api/books/{id}/panels/{n}?rtl=1` | detected panel boxes (0–1) |
 | `GET /api/books/{id}/chapters/{i}` | sanitised EPUB chapter HTML |

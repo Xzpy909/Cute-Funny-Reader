@@ -1090,8 +1090,10 @@ body.reading .reader {
     max-height 0.4s var(--ease),
     opacity 0.3s,
     padding 0.3s;
-  scrollbar-width: thin;
-  scrollbar-color: #444 transparent;
+  scrollbar-width: none;                 /* its own bar below: .filmbar */
+}
+.film::-webkit-scrollbar {
+  display: none;
 }
 .rbottom.film-open .film {
   max-height: 130px;
@@ -5577,3 +5579,79 @@ body.reading #jobs {
 .tselbar small { opacity: 0.7; margin-right: auto; }
 .tpick b { margin-right: auto; }
 .btn-sm.danger-soft:hover, #viewTrash .btn-sm.danger, .stbox .btn-sm.danger { background: #c0392b; color: #fff; border-color: #c0392b; }
+
+/* ---- the thumbnail strip's scrollbar: glows and gently pulses in the slider's colours ---- */
+.filmbar {
+  position: relative;
+  height: 0;
+  margin: 0 2px;
+  opacity: 0;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  touch-action: none;
+  transition: height 0.3s, opacity 0.3s, margin 0.3s;
+}
+.rbottom.film-open .filmbar {
+  height: 6px;
+  opacity: 1;
+  margin: 2px 2px 8px;
+}
+.rbottom.film-open .filmbar.none {
+  height: 0;
+  opacity: 0;
+  margin: 0 2px;
+}
+.filmbar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--lemon), var(--pop), var(--lemon));
+  background-size: 200% 100%;
+  animation: filmpulse 2.4s ease-in-out infinite;
+}
+.filmbar:hover i,
+.filmbar.drag i {
+  animation-play-state: paused;
+  opacity: 1;
+  box-shadow: 0 0 12px rgba(255, 92, 138, 0.75);
+}
+.filmbar:hover,
+.filmbar.drag {
+  height: 9px;
+}
+@keyframes filmpulse {
+  0%, 100% {
+    opacity: 0.6;
+    background-position: 0% 0;
+    box-shadow: 0 0 2px rgba(255, 216, 77, 0.25);
+  }
+  50% {
+    opacity: 1;
+    background-position: 100% 0;
+    box-shadow: 0 0 10px rgba(255, 92, 138, 0.7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .filmbar i {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+/* a video's frame in the strip, with a small ▶ on it */
+.film .vframe {
+  position: absolute;
+  inset: 0;
+}
+.film .vplay {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font: 9px/1 var(--body);
+  font-style: normal;
+  color: var(--lemon);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 3px 4px 3px 5px;
+  border-radius: 4px;
+}

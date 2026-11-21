@@ -378,12 +378,18 @@ class MediaMixin:
             return buf.getvalue()
 
     def thumb(self, b: dict, n: int, w: int) -> bytes:
-        if b["format"] == "video" or is_video(b["entries"][n]):
-            raise KeyError("video")                       # the UI shows a ▶ tile / first frame instead
+        video = b["format"] == "video" or is_video(b["entries"][n])
         w = min(THUMB_WIDTHS, key=lambda x: abs(x - w))
         f = self.thumb_dir / f"{b['id']}-{b['mtime']}-{n}-{w}.webp"
         if f.exists():
             return f.read_bytes()
+        if video:                                         # a frame from the video (ffmpeg), sized like a page
+            frame = self._video_frame(b, n)
+            if not frame:
+                raise KeyError("video")                   # no ffmpeg / unreadable: the UI keeps its ▶ tile
+            data = self._thumb_from_bytes(frame, w)
+            f.write_bytes(data)
+            return data
         data = self._thumb_from_bytes(self.read(b, b["entries"][n]), w)
         f.write_bytes(data)
         return data

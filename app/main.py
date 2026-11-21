@@ -1314,7 +1314,7 @@ def thumb(bid: str, n: int, request: Request, w: int = 200):
     try:
         data = lib.thumb(b, n, w)
     except KeyError:
-        raise HTTPException(404, "no thumbnail for videos")
+        raise HTTPException(404, "no frame could be taken from this video")
     return cached(request, f"{bid}-{b['mtime']}-{n}-t{w}", data, "image/webp")
 
 
