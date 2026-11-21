@@ -243,7 +243,9 @@ function route() {
   if (document.body.classList.contains('reading')) shutReader();
   S.inFavs = false; S.favCur = null; $('#viewFavs').classList.remove('on');
   S.inStorage = false; $('#viewStorage').classList.remove('on');
+  S.inTrash = false; $('#viewTrash').classList.remove('on');
   if (view === 'storage') { renderStorage(); renderSidebar(); return; }
+  if (view === 'trash') { renderTrash(); renderSidebar(); return; }
   if (view === 'favs' || view === 'fav') { renderFavs(view === 'fav' ? id : null); renderSidebar(); return; }
   if (view !== 'collection') S.col = null;
   if (view === 'series') renderSeries(id);

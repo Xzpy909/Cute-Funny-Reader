@@ -170,8 +170,10 @@ def status():
         _scan_soon()
     ids = mine()
     books = [b for b in lib.books.values() if b["library"] in ids]
+    trash = lib.trash_items(me()["id"], ids)
     return {**lib.status(), "books": len(books), "series": len({b["seriesId"] for b in books}),
-            "libraries": len(ids), "version": __version__, "build": front()[0]}
+            "libraries": len(ids), "version": __version__, "build": front()[0],
+            "trash": {"count": len(trash), "bytes": sum(x["size"] for x in trash)}}
 
 
 def _file_op(fn, *args, **kw):
@@ -344,9 +346,23 @@ def delete_books(body: dict = Body(...)):
 # ---- Trash
 @app.get("/api/trash")
 def trash_list():
-    """What's in the trash (already moved out of the library). Items only marked are on the books themselves."""
-    from .library import TRASH_DELAY, TRASH_KEEP
-    return {"items": lib.bin_items(me()["id"]), "delay": TRASH_DELAY, "keepDays": TRASH_KEEP // 86400}
+    """Everything in your trash — items still being moved out and items already in .trash alike — with totals and
+    how long it's kept."""
+    from .library import TRASH_DELAY
+    items = lib.trash_items(me()["id"], mine())
+    return {"items": items, "count": len(items), "bytes": sum(x["size"] for x in items),
+            "keepDays": lib.trash_keep_days(), "keepChoices": list(lib.KEEP_CHOICES), "delay": TRASH_DELAY,
+            "canChange": bool(me().get("admin"))}
+
+
+@app.put("/api/trash/settings")
+def trash_settings(body: dict = Body(...)):
+    """How long the trash keeps things (days; 0 = until emptied) — one setting for the whole reader."""
+    admin()
+    try:
+        return {"keepDays": lib.set_trash_keep_days(int(body.get("keepDays")))}
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, str(e) if isinstance(e, ValueError) and "Keep" in str(e) else "keepDays must be a number")
 
 
 @app.get("/api/trash/{tid}/cover")
@@ -358,30 +374,46 @@ def trash_cover(tid: str):
     return Response(data, media_type="image/webp", headers={"Cache-Control": "private, max-age=3600"})
 
 
-def _my_bin(body: dict) -> list[str]:
-    mine_ = {e["tid"] for e in lib.bin_items(me()["id"])}
-    return list(mine_) if body.get("all") else [t for t in body.get("bin", []) if t in mine_]
+def _my_trash(body: dict) -> tuple[list[dict], list[str]]:
+    """(marked books, bin ids) of yours that a request names — `all`: everything in your trash."""
+    items = lib.trash_items(me()["id"], mine())
+    if body.get("all"):
+        marked = [x["id"] for x in items if x["kind"] == "marked"]
+        tids = [x["tid"] for x in items if x["kind"] == "bin"]
+    else:
+        keys = {x["key"] for x in items}
+        marked = [i for i in body.get("ids", []) if "b:" + i in keys]
+        tids = [t for t in body.get("bin", []) if "t:" + t in keys]
+    return [b for b in (lib.get(i) for i in marked) if b], tids
 
 
 @app.post("/api/trash/restore")
 def trash_restore(body: dict = Body(...)):
-    """ids: books marked for the trash (still in place) · bin: items already in the trash."""
-    ids = [b["id"] for b in (lib.get(i) for i in body.get("ids", [])) if b and b["library"] in mine()]
-    out = {"restored": lib.untrash(ids)}
-    _file_op(lambda: out.update(restored=out["restored"] + lib.restore_bin(_my_bin(body))))
+    """ids: books still being moved out · bin: items already in .trash · all: everything · into: the library for
+    items whose own library is gone (without it: 409 with needLibrary = those items)."""
+    books, tids = _my_trash(body)
+    out = {"restored": lib.untrash([b["id"] for b in books])}
+    into = body.get("into") or None
+    if into and into not in mine():
+        raise HTTPException(404, "library not found")
+    try:
+        _file_op(lambda: out.update(restored=out["restored"] + lib.restore_bin(tids, into)))
+    except LookupError as e:
+        return JSONResponse({"detail": "Their library is gone — choose a library to restore them into", "needLibrary": e.args[0],
+                             "restored": out["restored"]}, status_code=409)
     return {"ok": True, **out}
 
 
 @app.post("/api/trash/purge")
 def trash_purge(body: dict = Body(...)):
-    """Delete for good: marked books (ids), trash items (bin), or everything in the trash (all)."""
-    books = [b for b in (lib.get(i) for i in body.get("ids", [])) if b and b["library"] in mine() and lib.trash.get(b["id"])]
+    """Delete for good: books still being moved out (ids), items in .trash (bin), or everything (all)."""
+    books, tids = _my_trash(body)
     out = {"deleted": 0}
     if books:
         _file_op(lib.delete_books, books)
         lib.trash.delete_many([b["id"] for b in books])
         out["deleted"] += len(books)
-    _file_op(lambda: out.update(deleted=out["deleted"] + lib.purge_bin(_my_bin(body))))
+    _file_op(lambda: out.update(deleted=out["deleted"] + lib.purge_bin(tids)))
     return {"ok": True, **out}
 
 

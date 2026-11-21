@@ -1,7 +1,7 @@
 TO DO
 =====
 Planned 2026-11-21 from what was left in "do -perf.txt" (now removed). In order: the split first — the job system
-then changes smaller, clearer pieces. Every step ends tested, committed and merged.
+then changes smaller, clearer pieces. The trash rework (Part 2) was added on 2026-11-21, before the job system. Every step ends tested, committed and merged.
 
 
 PART 1 — FINISH THE SPLIT  (pure restructuring: nothing visible changes)
@@ -26,7 +26,26 @@ PART 1 — FINISH THE SPLIT  (pure restructuring: nothing visible changes)
        EMPTY_FOLDER_AFTER read from library.py at call time, so tests can still swap them); live-server check.
 
 
-PART 2 — ONE BACKGROUND JOB SYSTEM WITH LIVE PROGRESS
+PART 2 — TRASH AS ITS OWN PAGE  (like "Recently deleted" in photo apps; decided 2026-11-21)
+---------------------------------------------------------------------------------------------
+Was: Delete greyed the card out in the library for 10 minutes, then the file moved to <account>/.trash for
+30 days (a Docker setting); the trash was a list in a pop-up from the account menu.  → DONE (all of T1–T7).
+
+[x] T1. Deleting is instant and clean: the item leaves the library views at once, a toast says
+        "Moved to Trash · Undo". (The file still moves in the background — Windows locks stay harmless.)
+[x] T2. 🗑 Trash in the sidebar ("Trash · 12 · 3.4 GB") → its own page (#/trash): the library card grid with
+        covers, a "18 days left" badge, grouped by library or by day deleted.
+[x] T3. Select like everywhere else: the selection bar with Restore / Delete forever; each card shows
+        Restore, Delete forever and "Was in: Comics / Starfall" right on it (no ⋯ menu needed).
+[x] T4. Empty trash shows what it frees ("frees 3.4 GB") and asks first.
+[x] T5. Restoring is safe: a missing folder is recreated, a taken name gets "(2)", and when the whole library
+        is gone you choose the library to restore into.
+[x] T6. The keep time is an app setting (7 / 14 / 30 / 90 days / never auto-delete) instead of a Docker
+        variable (TRASH_KEEP_DAYS stays the default); the Storage page shows the trash size with Empty.
+[x] T7. Tests for each; README updated; the old pop-up and account-menu entry go.
+
+
+PART 3 — ONE BACKGROUND JOB SYSTEM WITH LIVE PROGRESS
 ------------------------------------------------------
 Today four kinds of background work each do it their own way: ✨ Optimize has its own queue + Jobs panel,
 scans run in a loop the page polls every 8 s, JPEG XL / HEIC conversion starts a thread per book and is polled

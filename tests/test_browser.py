@@ -380,27 +380,35 @@ def test_add_library_opens_at_once_even_if_the_folder_list_is_slow(page):
     assert page.locator("#libSuggest [data-usefolder='Comics']").count() == 0
 
 
-def test_trash_marks_the_card_and_a_click_restores_it(page):
+def test_trash_is_its_own_page_with_undo(page):
     starfall = "#grid .card[data-series]:has-text('Starfall')"
+    back = location_hash(page)
     page.locator(starfall).first.click(button="right")
     page.locator("#menu [data-mact='trash']").click()
-    page.wait_for_selector(starfall + ".trashed")                               # greyed out, still there
-    click(page, starfall)                                                       # a click doesn't open it…
-    page.wait_for_selector("#menu.on [data-mact='restore']")                # …it offers to restore
-    assert location_hash(page).startswith("#/library/")                     # still on the shelf
-    page.keyboard.press("Escape"); page.mouse.click(5, 5)
+    page.wait_for_selector(starfall, state="detached")                         # gone from the shelf at once…
+    page.click("#apptoast.show button")                                        # …and Undo brings it back
+    page.wait_for_selector(starfall)
 
-    page.click("#acctBtn"); page.click("#menu [data-acct='trash']")         # the Trash dialog lists it
-    page.wait_for_selector("#trashModal.open .trow")
-    assert page.locator("#trashModal .trow").count() == 2                   # Starfall's two books
-    page.locator("#trashModal .trow [data-tact='restore']").first.click()
-    page.wait_for_function("document.querySelectorAll('#trashModal .trow').length === 1")
-    page.locator("#trashModal .trow [data-tact='purge']").first.click()     # deleting for good needs a second click
-    assert page.locator("#trashModal .trow").count() == 1
-    page.locator("#trashModal .trow [data-tact='restore']").first.click()
-    page.wait_for_selector("#trashModal .empty")
-    page.click("#trashModal [data-tclose]")
-    assert page.locator(starfall + ".trashed").count() == 0
+    page.locator(starfall).first.click(button="right")
+    page.locator("#menu [data-mact='trash']").click()
+    page.wait_for_selector(starfall, state="detached")
+    page.wait_for_function("document.querySelector('#nTrash').textContent === '2'")   # Starfall's two books
+    page.click("#mainNav [data-nav='trash']")
+    page.wait_for_selector("#viewTrash.on .tcard")
+    assert location_hash(page) == "#/trash"
+    assert page.locator("#viewTrash .tcard").count() == 2
+    assert "Was in:" in page.locator("#viewTrash .tcard").first.inner_text()
+    page.locator("#viewTrash .tcard [data-trestore]").first.click()
+    page.wait_for_function("document.querySelectorAll('#viewTrash .tcard').length === 1")
+    page.locator("#viewTrash .tcard [data-tpurge]").first.click()              # deleting for good needs a second click
+    assert page.locator("#viewTrash .tcard").count() == 1
+    page.locator("#viewTrash .tcard").first.click()                            # a click selects it
+    page.wait_for_selector("#viewTrash .tselbar")
+    page.click("#viewTrash [data-tselrestore]")
+    page.wait_for_function("!document.querySelector('#viewTrash .tcard')")
+    assert page.locator("#nTrash").inner_text() == ""
+    page.evaluate(f"location.hash = {back!r}")
+    page.wait_for_selector(starfall)
 
 
 def location_hash(page):
